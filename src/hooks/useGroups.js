@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupService } from '../api/groups';
 import { groupKeys } from '../api/groupKeys';
+import { studentKeys } from '../api/studentKeys';
 
 export function useGroups(commissionId) {
   return useQuery({
@@ -59,6 +60,7 @@ export function useAddGroupMember() {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.groupId) });
+      queryClient.invalidateQueries({ queryKey: studentKeys.lists() });
     },
   });
 }
@@ -70,6 +72,8 @@ export function useRemoveGroupMember() {
     mutationFn: groupService.removeMember,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: studentKeys.lists() });
     },
   });
 }
