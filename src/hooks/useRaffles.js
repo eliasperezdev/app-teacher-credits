@@ -1,0 +1,50 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { raffleService } from '../api/raffles';
+import { raffleKeys } from '../api/raffleKeys';
+import { sessionKeys } from '../api/sessionKeys';
+import { groupKeys } from '../api/groupKeys';
+
+export function useRaffles(sessionId) {
+  return useQuery({
+    queryKey: raffleKeys.lists(sessionId),
+    queryFn: () => raffleService.getAll(sessionId),
+    enabled: !!sessionId,
+  });
+}
+
+export function useCreateRaffle() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: raffleService.create,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: raffleKeys.lists(variables.sessionId) });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.detail(variables.sessionId) });
+    },
+  });
+}
+
+export function useResolveRaffleResult() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: raffleService.resolveResult,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: raffleKeys.all });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+    },
+  });
+}
+
+export function useRerunRaffle() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: raffleService.rerun,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: raffleKeys.lists(variables.sessionId) });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.detail(variables.sessionId) });
+    },
+  });
+}
