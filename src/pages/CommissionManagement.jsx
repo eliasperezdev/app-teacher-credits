@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useCommission } from '../hooks/useCommissions';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
 import { useStudents } from '../hooks/useStudents';
 import { useGroups } from '../hooks/useGroups';
 import Header from '../components/Header';
@@ -104,21 +104,183 @@ const CommissionManagement = () => {
   );
 };
 
-const ConfigTab = ({ commission }) => (
-  <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
-    <h2 className="text-2xl font-black text-slate-800 mb-4">Configuración</h2>
-    <p className="text-slate-500">Formulario de edición — Fase 2</p>
-    <div className="mt-4 space-y-2 text-sm text-slate-600">
-      <p><strong>Nombre:</strong> {commission.name}</p>
-      <p><strong>Año:</strong> {commission.year}</p>
-      <p><strong>Período:</strong> {commission.period}</p>
-      <p><strong>Grupo mín.:</strong> {commission.minGroupSize}</p>
-      <p><strong>Grupo máx.:</strong> {commission.maxGroupSize}</p>
-      <p><strong>Valor crédito:</strong> {commission.creditValue}</p>
-      <p><strong>Auto-completar:</strong> {commission.autoCompleteGroups ? 'Sí' : 'No'}</p>
+const ConfigTab = ({ commission }) => {
+  const navigate = useNavigate();
+  const [name, setName] = useState(commission.name);
+  const [year, setYear] = useState(commission.year);
+  const [period, setPeriod] = useState(commission.period);
+  const [minGroupSize, setMinGroupSize] = useState(commission.minGroupSize);
+  const [maxGroupSize, setMaxGroupSize] = useState(commission.maxGroupSize);
+  const [creditValue, setCreditValue] = useState(commission.creditValue);
+  const [autoCompleteGroups, setAutoCompleteGroups] = useState(commission.autoCompleteGroups);
+  const [error, setError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const updateCommission = useUpdateCommission();
+  const deleteCommission = useDeleteCommission();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!name.trim()) {
+      setError('El nombre es obligatorio');
+      return;
+    }
+
+    try {
+      await updateCommission.mutateAsync({
+        id: commission.id,
+        name: name.trim(),
+        year: Number(year),
+        period: Number(period),
+        minGroupSize: Number(minGroupSize),
+        maxGroupSize: Number(maxGroupSize),
+        creditValue: Number(creditValue),
+        autoCompleteGroups,
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al actualizar la comisión');
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deleteCommission.mutateAsync(commission.id);
+      navigate('/commissions');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al eliminar la comisión');
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
+        <h2 className="text-2xl font-black text-slate-800 mb-6">Editar Comisión</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Año</label>
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Período</label>
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(Number(e.target.value))}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors bg-white"
+                >
+                  <option value={1}>1er Cuatrimestre</option>
+                  <option value={2}>2do Cuatrimestre</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Grupo mín.</label>
+                <input
+                  type="number"
+                  value={minGroupSize}
+                  onChange={(e) => setMinGroupSize(e.target.value)}
+                  min={1}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Grupo máx.</label>
+                <input
+                  type="number"
+                  value={maxGroupSize}
+                  onChange={(e) => setMaxGroupSize(e.target.value)}
+                  min={1}
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Valor de crédito</label>
+              <input
+                type="number"
+                value={creditValue}
+                onChange={(e) => setCreditValue(e.target.value)}
+                step="0.01"
+                min="0"
+                className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+              />
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoCompleteGroups}
+                onChange={(e) => setAutoCompleteGroups(e.target.checked)}
+                className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm font-bold text-slate-700">Auto-completar grupos</span>
+            </label>
+            {error && (
+              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</p>
+            )}
+            {updateCommission.isSuccess && (
+              <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3">Comisión actualizada correctamente</p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={updateCommission.isPending}
+            className="mt-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-3 px-6 rounded-xl transition-colors cursor-pointer"
+          >
+            {updateCommission.isPending ? 'Guardando...' : 'Guardar Cambios'}
+          </button>
+        </form>
+      </section>
+
+      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-rose-100">
+        <h2 className="text-xl font-black text-rose-600 mb-2">Zona de Peligro</h2>
+        <p className="text-sm text-slate-500 mb-4">Esta acción no se puede deshacer. Se eliminarán todos los alumnos, grupos y sesiones asociadas.</p>
+        {!showDeleteConfirm ? (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white font-bold py-2.5 px-5 rounded-xl transition-colors cursor-pointer"
+          >
+            Eliminar Comisión
+          </button>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              onClick={handleDelete}
+              disabled={deleteCommission.isPending}
+              className="bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold py-2.5 px-5 rounded-xl transition-colors cursor-pointer"
+            >
+              {deleteCommission.isPending ? 'Eliminando...' : 'Sí, eliminar'}
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-5 rounded-xl transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+      </section>
     </div>
-  </div>
-);
+  );
+};
 
 const StudentsTab = ({ commission, students }) => (
   <div className="flex flex-col gap-8">

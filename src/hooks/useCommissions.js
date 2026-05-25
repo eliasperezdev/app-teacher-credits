@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commissionService } from '../api/commissions';
 import { commissionKeys } from '../api/commissionKeys';
+import { subjectKeys } from '../api/subjectKeys';
 
 export function useCommissions(subjectId) {
   return useQuery({
@@ -45,8 +46,9 @@ export function useDeleteCommission() {
 
   return useMutation({
     mutationFn: commissionService.remove,
-    onSuccess: () => {
+    onSuccess: (data, id) => {
       queryClient.invalidateQueries({ queryKey: commissionKeys.all });
+      queryClient.invalidateQueries({ queryKey: subjectKeys.lists() });
     },
   });
 }
