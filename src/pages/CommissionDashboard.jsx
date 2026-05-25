@@ -5,6 +5,8 @@ import { useCommissions } from '../hooks/useCommissions';
 import Header from '../components/Header';
 import ActionBar from '../components/ActionBar';
 import CommissionCard from '../components/CommissionCard';
+import CreateSubjectModal from '../components/CreateSubjectModal';
+import CreateCommissionModal from '../components/CreateCommissionModal';
 
 const CommissionDashboard = () => {
   const { user } = useAuth();
@@ -50,33 +52,11 @@ const CommissionDashboard = () => {
       </main>
 
       {showSubjectModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h3 className="text-2xl font-black text-slate-800 mb-4">Crear Materia</h3>
-            <p className="text-slate-500 mb-6">Formulario pendiente — Fase 7</p>
-            <button
-              onClick={() => setShowSubjectModal(false)}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+        <CreateSubjectModal onClose={() => setShowSubjectModal(false)} />
       )}
 
       {showCommissionModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h3 className="text-2xl font-black text-slate-800 mb-4">Nueva Comisión</h3>
-            <p className="text-slate-500 mb-6">Formulario pendiente — Fase 7</p>
-            <button
-              onClick={() => setShowCommissionModal(false)}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+        <CreateCommissionModal onClose={() => setShowCommissionModal(false)} />
       )}
     </div>
   );
