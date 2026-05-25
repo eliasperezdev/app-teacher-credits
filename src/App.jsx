@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CommissionDashboard from './pages/CommissionDashboard';
+import CommissionDetail from './pages/CommissionDetail';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,7 @@ function App() {
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/commissions" element={<ProtectedRoute><CommissionDashboard /></ProtectedRoute>} />
+            <Route path="/commission/:id" element={<ProtectedRoute><CommissionDetail /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AuthProvider>

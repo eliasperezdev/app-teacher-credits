@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '../api/auth';
 import axiosInstance from '../api/axios';
@@ -15,34 +15,27 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-  const [isVerifying, setIsVerifying] = useState(authService.isAuthenticated());
   const queryClient = useQueryClient();
 
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['currentUser'],
     queryFn: authService.getCurrentUser,
-    enabled: isAuthenticated,
-    retry: 1,
+    enabled: authService.isAuthenticated(),
+    retry: false,
     staleTime: 1000 * 60 * 5,
     onSuccess: () => {
-      setIsVerifying(false);
+      setIsAuthenticated(true);
     },
     onError: (err) => {
-      if (err.response?.status === 401) {
-        setIsAuthenticated(false);
-        setIsVerifying(false);
-        authService.logout();
-      } else {
-        setIsVerifying(false);
+      setIsAuthenticated(false);
+      authService.logout();
+      if (err.response?.status !== 401) {
+        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
       }
     },
   });
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setIsVerifying(false);
-    }
-  }, [isAuthenticated]);
+  const isVerifying = authService.isAuthenticated() && isLoading;
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }) => authService.login(email, password),
@@ -53,7 +46,6 @@ export const AuthProvider = ({ children }) => {
         axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
       }
       setIsAuthenticated(true);
-      setIsVerifying(false);
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
@@ -61,7 +53,6 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     authService.logout();
     setIsAuthenticated(false);
-    setIsVerifying(false);
     queryClient.clear();
     window.location.href = '/login';
   };
