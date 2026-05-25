@@ -15,6 +15,7 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
+  const [isVerifying, setIsVerifying] = useState(authService.isAuthenticated());
   const queryClient = useQueryClient();
 
   const { data: user, isLoading, error } = useQuery({
@@ -23,13 +24,25 @@ export const AuthProvider = ({ children }) => {
     enabled: isAuthenticated,
     retry: 1,
     staleTime: 1000 * 60 * 5,
+    onSuccess: () => {
+      setIsVerifying(false);
+    },
     onError: (err) => {
       if (err.response?.status === 401) {
         setIsAuthenticated(false);
+        setIsVerifying(false);
         authService.logout();
+      } else {
+        setIsVerifying(false);
       }
     },
   });
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setIsVerifying(false);
+    }
+  }, [isAuthenticated]);
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }) => authService.login(email, password),
@@ -40,6 +53,7 @@ export const AuthProvider = ({ children }) => {
         axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
       }
       setIsAuthenticated(true);
+      setIsVerifying(false);
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
@@ -47,6 +61,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     authService.logout();
     setIsAuthenticated(false);
+    setIsVerifying(false);
     queryClient.clear();
     window.location.href = '/login';
   };
@@ -54,6 +69,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     isAuthenticated,
+    isVerifying,
     isLoading,
     error,
     login: loginMutation.mutate,

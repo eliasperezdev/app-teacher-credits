@@ -32,7 +32,7 @@ function App() {
               }
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/commissions" element={<CommissionDashboard />} />
+            <Route path="/commissions" element={<ProtectedRoute><CommissionDashboard /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AuthProvider>
