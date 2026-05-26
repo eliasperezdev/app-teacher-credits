@@ -3,14 +3,12 @@ import { useAuth } from '../contexts/AuthContext';
 const Header = () => {
   const { user, logout } = useAuth();
 
-  const userData = user.data
-
-  const initials = userData?.name
-    ? userData.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+  const initials = user?.name
+    ? user.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
     : '??';
 
-  const avatarUrl = userData?.name
-    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=e0e7ff&color=4f46e5&bold=true`
+  const avatarUrl = user?.name
+    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e0e7ff&color=4f46e5&bold=true`
     : '';
 
   return (
@@ -27,8 +25,8 @@ const Header = () => {
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3 text-right">
           <div className="hidden sm:block">
-            <p className="text-sm font-bold text-slate-800">{userData?.name || 'Profesor'}</p>
-            <p className="text-xs text-slate-500">{userData?.email || ''}</p>
+            <p className="text-sm font-bold text-slate-800">{user?.name || 'Profesor'}</p>
+            <p className="text-xs text-slate-500">{user?.email || ''}</p>
           </div>
           {avatarUrl ? (
             <img src={avatarUrl} alt="Avatar" className="w-11 h-11 rounded-full border-2 border-indigo-100" />
