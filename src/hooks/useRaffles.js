@@ -29,7 +29,7 @@ export function useResolveRaffleResult() {
 
   return useMutation({
     mutationFn: raffleService.resolveResult,
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: raffleKeys.all });
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });

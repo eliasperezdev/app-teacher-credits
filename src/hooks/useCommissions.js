@@ -46,7 +46,7 @@ export function useDeleteCommission() {
 
   return useMutation({
     mutationFn: commissionService.remove,
-    onSuccess: (data, id) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: commissionKeys.all });
       queryClient.invalidateQueries({ queryKey: subjectKeys.lists() });
     },

@@ -47,7 +47,7 @@ export function useDeleteGroup() {
 
   return useMutation({
     mutationFn: groupService.remove,
-    onSuccess: (data, variables, context) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
     },
   });
@@ -58,7 +58,7 @@ export function useAddGroupMember() {
 
   return useMutation({
     mutationFn: groupService.addMember,
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: studentKeys.all });
     },
@@ -70,7 +70,7 @@ export function useRemoveGroupMember() {
 
   return useMutation({
     mutationFn: groupService.removeMember,
-    onSuccess: (data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: studentKeys.all });
     },

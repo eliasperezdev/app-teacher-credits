@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { useSubjects } from '../hooks/useSubjects';
 import { useCommissions } from '../hooks/useCommissions';
 import Header from '../components/Header';
@@ -9,7 +8,6 @@ import CreateSubjectModal from '../components/CreateSubjectModal';
 import CreateCommissionModal from '../components/CreateCommissionModal';
 
 const CommissionDashboard = () => {
-  const { user } = useAuth();
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [showCommissionModal, setShowCommissionModal] = useState(false);
 

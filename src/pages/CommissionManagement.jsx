@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
-import { useStudents, useImportStudents, useUnenrollStudent } from '../hooks/useStudents';
+import { useStudents, useImportStudents } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
@@ -15,13 +15,8 @@ const TABS = [
 
 const CommissionManagement = () => {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'groups');
-
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab) setActiveTab(tab);
-  }, [searchParams]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'groups';
 
   const { data: commissionData, isLoading: loadingCommission } = useCommission(id);
   const { data: studentsData } = useStudents(id);
@@ -103,7 +98,7 @@ const CommissionManagement = () => {
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setSearchParams({ tab: tab.id })}
               className={`pb-4 font-bold text-sm uppercase tracking-wider whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 activeTab === tab.id
                   ? 'text-indigo-600 border-b-2 border-indigo-600'
@@ -316,7 +311,6 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
-  const unenrollStudent = useUnenrollStudent();
   const createCredit = useCreateCredit();
 
   const filtered = students.filter((s) => {
@@ -340,15 +334,6 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
       e.target.value = '';
     } catch (err) {
       setImportError(err.response?.data?.message || 'Error al importar alumnos');
-    }
-  };
-
-  const handleUnenroll = async (studentId) => {
-    if (!confirm('¿Desinscribir a este alumno?')) return;
-    try {
-      await unenrollStudent.mutateAsync({ commissionId: commission.id, studentId });
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error al desinscribir');
     }
   };
 

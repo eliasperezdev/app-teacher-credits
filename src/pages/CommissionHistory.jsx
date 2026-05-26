@@ -11,7 +11,6 @@ const CommissionHistory = () => {
 
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
 
   const commission = commissionData?.data;
   const creditSummary = creditSummaryData?.data;
@@ -174,7 +173,6 @@ const CommissionHistory = () => {
               onClick={() => {
                 setSearch('');
                 setFilterType('all');
-                setDateFilter('');
               }}
               className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold px-4 py-3 rounded-xl text-sm transition-colors cursor-pointer"
             >
