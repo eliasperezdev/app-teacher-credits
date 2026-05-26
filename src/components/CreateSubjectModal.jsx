@@ -56,7 +56,7 @@ const CreateSubjectModal = ({ onClose }) => {
               />
             </div>
             {error && (
-              <p className="text-sm font-bold text-coral-600 bg-coral-50 rounded-xl px-4 py-3 text-red-600 bg-red-50">{error}</p>
+              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</p>
             )}
           </div>
           <div className="flex gap-3 mt-6">

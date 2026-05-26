@@ -8,9 +8,9 @@ import { useSessions } from '../hooks/useSessions';
 import Header from '../components/Header';
 
 const TABS = [
-  { id: 'config', label: '⚙️ Configuración' },
-  { id: 'students', label: '👥 Alumnos e Importación' },
-  { id: 'groups', label: '🃏 Gestión de Grupos' },
+  { id: 'config', label: 'Configuracion' },
+  { id: 'students', label: 'Alumnos e Importacion' },
+  { id: 'groups', label: 'Gestion de Grupos' },
 ];
 
 const CommissionManagement = () => {
@@ -367,7 +367,9 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
           <div className="flex flex-col md:flex-row gap-6 items-center">
             <div className="flex-1">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
-                <span className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">📥</span> Importar desde SIU Guaraní
+                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg> Importar desde SIU Guarani
               </h2>
               <p className="text-sm text-slate-500">Sube el archivo Excel o CSV descargado del SIU. Actualizaremos las inscripciones automáticamente validando por Legajo.</p>
             </div>
@@ -492,7 +494,9 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                       }`}
                       title={!canCanjear ? 'Sin créditos para canjear' : 'Canjear créditos'}
                     >
-                      <span>🎁</span> Canjear
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                      </svg> Canjear
                     </button>
                   </div>
                 </div>
@@ -595,7 +599,9 @@ const GroupsTab = ({ commission, students, groups }) => {
           <GroupEditor group={selectedGroup} students={students} maxSize={commission.maxGroupSize} />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 z-10">
-            <span className="text-4xl mb-4">🃏</span>
+            <svg className="w-10 h-10 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
             <p className="text-slate-500 font-medium">Selecciona un grupo a la izquierda o crea uno nuevo</p>
           </div>
         )}
@@ -653,7 +659,7 @@ const GroupDirectoryItem = ({ group, minSize, isSelected, onSelect }) => {
         <span className={`text-xs font-bold ${
           isSelected ? 'text-indigo-700' : isComplete ? 'text-slate-500' : 'text-rose-600'
         }`}>
-          {isComplete ? `${group.members.length} Alumnos` : `⚠️ ${group.members.length} Alumno${group.members.length !== 1 ? 's' : ''}`}
+          {isComplete ? `${group.members.length} Alumnos` : `! ${group.members.length} Alumno${group.members.length !== 1 ? 's' : ''}`}
         </span>
       </div>
       <h3 className={`text-base font-bold truncate pr-6 ${
@@ -749,7 +755,7 @@ const GroupEditor = ({ group, students, maxSize }) => {
             </span>
           ) : (
             <span className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded-md">
-              ⚠️ Incompleto
+              Incompleto
             </span>
           )}
         </div>
@@ -772,7 +778,9 @@ const GroupEditor = ({ group, students, maxSize }) => {
         {/* Left: Search & Add */}
         <div className="w-full xl:w-1/2 p-6 sm:p-8 border-b xl:border-b-0 xl:border-r border-slate-100 flex flex-col gap-4 overflow-hidden">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <span>🔍</span> Buscar y Agregar Alumno
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg> Buscar y Agregar Alumno
           </h3>
 
           <div className="relative">
@@ -852,7 +860,9 @@ const GroupEditor = ({ group, students, maxSize }) => {
         <div className="w-full xl:w-1/2 p-6 sm:p-8 bg-slate-50/30 flex flex-col gap-4 overflow-hidden">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <span>👥</span> Integrantes Actuales
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+            </svg> Integrantes Actuales
             </h3>
             <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-md">
               {group.members.length}/{maxSize} max

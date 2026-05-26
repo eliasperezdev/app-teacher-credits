@@ -330,7 +330,9 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
         <aside className="w-full xl:col-span-3 bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <span>🎯</span> Nuevo Sorteo
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg> Nuevo Sorteo
             </h2>
           </div>
 
@@ -413,12 +415,16 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
 
           {pendingResults.length === 0 && raffles.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm text-center">
-              <span className="text-4xl mb-3">🎲</span>
+              <svg className="w-10 h-10 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               <p className="text-slate-400 font-medium">Lanzá un sorteo para comenzar</p>
             </div>
           ) : pendingResults.length === 0 && latestRaffle ? (
             <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
-              <span className="text-3xl mb-2">✅</span>
+              <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               <p className="text-slate-500 font-medium">Todos los grupos de esta ronda fueron resueltos</p>
             </div>
           ) : (
@@ -460,7 +466,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                             : 'bg-slate-100 text-slate-500'
                         }`}
                       >
-                        {h.status === 'PARTICIPATED' ? '🟢 Participó' : h.status === 'ABSENT' ? '🔴 Ausente' : '⚪ Omitido'}
+                        {h.status === 'PARTICIPATED' ? 'Participo' : h.status === 'ABSENT' ? 'Ausente' : 'Omitido'}
                       </span>
                     </div>
                   ))}
@@ -505,7 +511,9 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
 
           <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 flex-1 flex flex-col min-h-[300px]">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-6 flex items-center gap-2">
-              <span>📋</span> Registro en vivo
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01m-.01 4h.01" />
+              </svg> Registro en vivo
             </h3>
 
             <div className="space-y-5 flex-1 overflow-y-auto pr-2">
@@ -605,7 +613,7 @@ const RaffleResultRow = ({ result, onResolve }) => {
           disabled={result.status !== 'PENDING'}
           className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
         >
-          <span className="text-sm group-hover:scale-110 transition-transform">🟢</span>
+          <span className="text-sm group-hover:scale-110 transition-transform">+</span>
           <span className="text-sm">Sumar</span>
         </button>
         <button
@@ -613,7 +621,7 @@ const RaffleResultRow = ({ result, onResolve }) => {
           disabled={result.status !== 'PENDING'}
           className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
         >
-          <span className="text-sm group-hover:scale-110 transition-transform">🔴</span>
+          <span className="text-sm group-hover:scale-110 transition-transform">-</span>
           <span className="text-sm">Falta</span>
         </button>
         <button
@@ -622,7 +630,7 @@ const RaffleResultRow = ({ result, onResolve }) => {
           className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
           title="Omitir sin penalizar"
         >
-          <span className="text-sm group-hover:scale-110 transition-transform">⚪</span>
+          <span className="text-sm group-hover:scale-110 transition-transform">~</span>
         </button>
       </div>
     </div>

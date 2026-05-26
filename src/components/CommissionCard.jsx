@@ -31,7 +31,9 @@ const CommissionCard = ({ commission, subjectName }) => {
       {!hasStudents ? (
         <div className="grid grid-cols-2 gap-3 mb-8 bg-rose-50 rounded-2xl p-4 border border-rose-100">
           <div className="col-span-2 flex items-center gap-2">
-            <span className="text-rose-500">⚠️</span>
+            <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
             <span className="text-sm font-bold text-rose-700">Falta importar alumnos</span>
           </div>
         </div>
@@ -53,26 +55,26 @@ const CommissionCard = ({ commission, subjectName }) => {
           to={`/commission/${commission.id}/class`}
           className="col-span-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold py-3.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
         >
-          ▶️ Abrir Consola de Clase
+          Abrir Consola de Clase
         </Link>
         <Link
           to={`/commission/${commission.id}`}
           className="bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
         >
-          ⚙️ Gestionar
+          Gestionar
         </Link>
         <Link
           to={`/commission/${commission.id}?tab=students`}
           className="bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
         >
-          👥 Alumnos
+          Alumnos
         </Link>
         {hasStudents && (
           <Link
             to={`/commission/${commission.id}/history`}
             className="col-span-2 bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
           >
-            📊 Ver Historial
+            Ver Historial
           </Link>
         )}
       </div>

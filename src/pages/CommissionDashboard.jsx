@@ -83,7 +83,9 @@ const SubjectCommissions = ({ subject }) => {
   if (commissions.length === 0) {
     return (
       <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 border-dashed flex flex-col items-center justify-center min-h-[280px]">
-        <span className="text-4xl mb-3">📋</span>
+        <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
         <p className="text-slate-500 font-medium text-center">{subject.name}</p>
         <p className="text-slate-400 text-sm">Sin comisiones</p>
       </div>
