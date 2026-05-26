@@ -23,7 +23,7 @@ export const AuthProvider = ({ children }) => {
     onSuccess: (data) => {
       const teacher = data?.data?.teacher;
       if (teacher) {
-        queryClient.setQueryData(['currentUser'], { data: { teacher } });
+        queryClient.setQueryData(['currentUser'], { data: teacher });
       }
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
   });
 
   const value = useMemo(() => ({
-    user: user?.data?.teacher,
+    user: user?.data?.teacher ?? user?.data,
     isAuthenticated,
     isVerifying,
     isLoading,
