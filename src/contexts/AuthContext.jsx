@@ -21,6 +21,7 @@ export const AuthProvider = ({ children }) => {
   const loginMutation = useMutation({
     mutationFn: ({ email, password }) => authService.login(email, password),
     onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['currentUser'] });
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
