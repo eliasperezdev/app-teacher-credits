@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useMemo } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '../api/auth';
 
@@ -7,20 +7,12 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const queryClient = useQueryClient();
-  const [authed, setAuthed] = useState(false);
 
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['currentUser'],
     queryFn: authService.getCurrentUser,
     retry: false,
     staleTime: 1000 * 60 * 5,
-    enabled: authed,
-    onSuccess: () => {
-      setAuthed(true);
-    },
-    onError: () => {
-      setAuthed(false);
-    },
   });
 
   const isAuthenticated = !!user;
@@ -28,21 +20,22 @@ export const AuthProvider = ({ children }) => {
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }) => authService.login(email, password),
-    onSuccess: () => {
-      setAuthed(true);
-      queryClient.resetQueries({ queryKey: ['currentUser'] });
+    onSuccess: (data) => {
+      const teacher = data?.data?.teacher;
+      if (teacher) {
+        queryClient.setQueryData(['currentUser'], { data: { teacher } });
+      }
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
 
   const logoutMutation = useMutation({
     mutationFn: authService.logout,
     onSuccess: () => {
-      setAuthed(false);
       queryClient.clear();
       window.location.href = '/login';
     },
     onError: () => {
-      setAuthed(false);
       queryClient.clear();
       window.location.href = '/login';
     },
