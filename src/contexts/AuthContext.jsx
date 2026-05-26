@@ -1,64 +1,43 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '../api/auth';
-import axiosInstance from '../api/axios';
-
-const extractToken = (data) => {
-  if (data.token) return data.token;
-  if (data.access_token) return data.access_token;
-  if (data.data?.token) return data.data.token;
-  if (data.data?.access_token) return data.data.access_token;
-  return null;
-};
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
   const queryClient = useQueryClient();
 
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['currentUser'],
     queryFn: authService.getCurrentUser,
-    enabled: authService.isAuthenticated(),
     retry: false,
     staleTime: 1000 * 60 * 5,
-    onSuccess: () => {
-      setIsAuthenticated(true);
-    },
-    onError: (err) => {
-      setIsAuthenticated(false);
-      authService.logout();
-      if (err.response?.status !== 401) {
-        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      }
-    },
   });
 
-  const isVerifying = authService.isAuthenticated() && isLoading;
+  const isAuthenticated = !!user;
+  const isVerifying = isLoading;
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }) => authService.login(email, password),
-    onSuccess: (data) => {
-      const token = extractToken(data);
-      console.log('onSuccess - token:', token);
-      if (token) {
-        axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
-      }
-      setIsAuthenticated(true);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
 
-  const logout = () => {
-    authService.logout();
-    setIsAuthenticated(false);
-    queryClient.clear();
-    window.location.href = '/login';
-  };
+  const logoutMutation = useMutation({
+    mutationFn: authService.logout,
+    onSuccess: () => {
+      queryClient.clear();
+      window.location.href = '/login';
+    },
+    onError: () => {
+      queryClient.clear();
+      window.location.href = '/login';
+    },
+  });
 
-  const value = {
-    user,
+  const value = useMemo(() => ({
+    user: user?.data?.teacher,
     isAuthenticated,
     isVerifying,
     isLoading,
@@ -66,8 +45,8 @@ export const AuthProvider = ({ children }) => {
     login: loginMutation.mutate,
     loginError: loginMutation.error,
     isLoginLoading: loginMutation.isPending,
-    logout,
-  };
+    logout: () => logoutMutation.mutate(),
+  }), [user, isAuthenticated, isVerifying, isLoading, error, loginMutation, logoutMutation]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

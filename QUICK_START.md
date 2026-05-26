@@ -64,7 +64,7 @@ La aplicación estará disponible en http://localhost:5173
 1. Abre http://localhost:5173
 2. Usa tus credenciales de la API
 3. Deberías ver el dashboard después de iniciar sesión
-4. El token se guarda automáticamente en localStorage
+4. Las cookies se manejan automáticamente (HttpOnly)
 5. Al refrescar la página, deberías seguir autenticado
 
 ---

@@ -53,15 +53,21 @@ npm run preview
 ```
 src/
 ├── api/
-│   ├── axios.js          # Configuración de Axios + interceptores
+│   ├── axios.js          # Axios + interceptores + refresh automático
 │   └── auth.js           # Servicios de autenticación
 ├── components/
-│   └── ProtectedRoute.jsx # Componente para rutas protegidas
+│   ├── ProtectedRoute.jsx # Rutas protegidas
+│   ├── Header.jsx         # Header con info del usuario
+│   └── ...
 ├── contexts/
 │   └── AuthContext.jsx   # Context de autenticación
 ├── pages/
-│   ├── Login.jsx         # Página de inicio de sesión
-│   └── Dashboard.jsx     # Página principal (protegida)
+│   ├── Login.jsx
+│   ├── CommissionDashboard.jsx
+│   ├── CommissionDetail.jsx
+│   ├── CommissionManagement.jsx
+│   └── CommissionHistory.jsx
+├── hooks/                 # Custom hooks con React Query
 ├── App.jsx               # Configuración de rutas
 └── main.jsx              # Punto de entrada
 ```
@@ -78,29 +84,31 @@ El frontend espera que el backend tenga los siguientes endpoints:
   "password": "password123"
 }
 
-// Response
+// Response (cookies HttpOnly seteadas automáticamente)
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": 1,
-    "email": "profesor@universidad.edu",
-    "name": "Juan Pérez",
-    "role": "profesor"
+  "data": {
+    "teacher": {
+      "id": "uuid",
+      "email": "profesor@universidad.edu",
+      "name": "Juan Pérez"
+    }
   }
 }
 ```
 
 ### GET /auth/me
 ```json
-// Headers
-Authorization: Bearer <token>
+// Cookies enviadas automáticamente (credentials: include)
 
 // Response
 {
-  "id": 1,
-  "email": "profesor@universidad.edu",
-  "name": "Juan Pérez",
-  "role": "profesor"
+  "data": {
+    "teacher": {
+      "id": "uuid",
+      "email": "profesor@universidad.edu",
+      "name": "Juan Pérez"
+    }
+  }
 }
 ```
 
@@ -115,17 +123,17 @@ El diseño está basado en el archivo HTML proporcionado con:
 ## 🔑 Autenticación
 
 El sistema utiliza:
-1. **JWT Token** almacenado en localStorage
-2. **Interceptores de Axios** para agregar el token automáticamente
+1. **Cookies HttpOnly** para access token (15 min) y refresh token (7 días)
+2. **Interceptores de Axios** con `credentials: include` y refresh automático en 401
 3. **AuthContext** para gestionar el estado de autenticación
 4. **React Query** para cachear datos del usuario
-5. **Redirección automática** en caso de token inválido (401)
+5. **Redirección automática** en caso de refresh fallido
 
 ## 📝 Notas de Desarrollo
 
-- El token se guarda en `localStorage` con la key `token`
-- Los interceptores de Axios agregan automáticamente el header `Authorization: Bearer <token>`
-- Si el backend responde con 401, el usuario es redirigido automáticamente a `/login`
+- Las cookies son HttpOnly y Secure en producción; JavaScript no puede acceder a ellas
+- Axios envía `credentials: include` en todas las peticiones
+- Si una petición devuelve 401, se intenta refresh automáticamente antes de redirigir a `/login`
 - Las rutas protegidas muestran un spinner mientras se verifica la autenticación
 - React Query cachea la información del usuario por 5 minutos
 

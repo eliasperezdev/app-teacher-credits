@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
-import { useStudents, useImportStudents, useEnrollStudent, useUnenrollStudent } from '../hooks/useStudents';
+import { useStudents, useImportStudents, useUnenrollStudent } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
+import { useSessions } from '../hooks/useSessions';
 import Header from '../components/Header';
 
 const TABS = [
@@ -26,6 +27,7 @@ const CommissionManagement = () => {
   const { data: studentsData } = useStudents(id);
   const { data: groupsData } = useGroups(id);
   const { data: creditSummaryData } = useCreditSummary(id);
+  const { data: sessionsData } = useSessions(id);
 
   const commission = commissionData?.data;
   const students = studentsData?.data ?? [];
@@ -119,7 +121,7 @@ const CommissionManagement = () => {
         </div>
 
         {activeTab === 'config' && <ConfigTab commission={commission} />}
-        {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} />}
+        {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} sessions={sessionsData?.data ?? []} />}
         {activeTab === 'groups' && <GroupsTab commission={commission} students={students} groups={groups} />}
       </main>
     </div>
@@ -304,10 +306,8 @@ const ConfigTab = ({ commission }) => {
   );
 };
 
-const StudentsTab = ({ commission, students, studentCreditMap }) => {
+const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
   const [search, setSearch] = useState('');
-  const [fileNumber, setFileNumber] = useState('');
-  const [enrollError, setEnrollError] = useState('');
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
   const [canjearModal, setCanjearModal] = useState(null);
@@ -316,7 +316,6 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
-  const enrollStudent = useEnrollStudent();
   const unenrollStudent = useUnenrollStudent();
   const createCredit = useCreateCredit();
 
@@ -344,23 +343,6 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
     }
   };
 
-  const handleEnroll = async (e) => {
-    e.preventDefault();
-    setEnrollError('');
-
-    if (!fileNumber.trim()) {
-      setEnrollError('Ingresa un legajo');
-      return;
-    }
-
-    try {
-      await enrollStudent.mutateAsync({ commissionId: commission.id, fileNumber: fileNumber.trim() });
-      setFileNumber('');
-    } catch (err) {
-      setEnrollError(err.response?.data?.message || 'Error al inscribir alumno');
-    }
-  };
-
   const handleUnenroll = async (studentId) => {
     if (!confirm('¿Desinscribir a este alumno?')) return;
     try {
@@ -375,9 +357,12 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
     setCanjearError('');
     setCanjearSuccess('');
 
+    const latestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
+
     try {
       await createCredit.mutateAsync({
         groupId: canjearModal.student.group.id,
+        sessionId: latestSession?.id,
         amount: -canjearModal.credits,
         reason: 'Canje de créditos',
       });
@@ -392,71 +377,49 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
   return (
     <div className="flex flex-col gap-8">
       {/* Import Section */}
-      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
-        <div className="flex flex-col md:flex-row gap-6 items-center">
-          <div className="flex-1">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
-              <span className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">📥</span> Importar desde SIU Guaraní
-            </h2>
-            <p className="text-sm text-slate-500">Sube el archivo Excel o CSV descargado del SIU. Actualizaremos las inscripciones automáticamente validando por Legajo.</p>
-          </div>
-
-          <div className="w-full md:w-[400px]">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl p-6 text-center transition-colors cursor-pointer group"
-            >
-              <div className="text-indigo-400 group-hover:text-indigo-600 mb-2 transition-colors">
-                <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <p className="text-sm font-bold text-indigo-800">Arrastra tu archivo CSV/XLS aquí</p>
-              <p className="text-xs text-indigo-500 mt-1">o haz clic para explorar</p>
+      {students.length === 0 && (
+        <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
+          <div className="flex flex-col md:flex-row gap-6 items-center">
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
+                <span className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">📥</span> Importar desde SIU Guaraní
+              </h2>
+              <p className="text-sm text-slate-500">Sube el archivo Excel o CSV descargado del SIU. Actualizaremos las inscripciones automáticamente validando por Legajo.</p>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            {importStudents.isPending && (
-              <p className="text-sm text-slate-500 mt-2 text-center">Importando...</p>
-            )}
-          </div>
-        </div>
-        {importError && (
-          <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mt-4">{importError}</p>
-        )}
-        {importSuccess && (
-          <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 mt-4">{importSuccess}</p>
-        )}
-      </section>
 
-      {/* Manual Enroll */}
-      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Inscribir Alumno Manualmente</h2>
-        <form onSubmit={handleEnroll} className="flex gap-3">
-          <input
-            type="text"
-            value={fileNumber}
-            onChange={(e) => setFileNumber(e.target.value)}
-            placeholder="Número de legajo"
-            className="flex-1 border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
-          />
-          <button
-            type="submit"
-            disabled={enrollStudent.isPending}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-3 px-6 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
-          >
-            {enrollStudent.isPending ? 'Inscribiendo...' : 'Inscribir'}
-          </button>
-        </form>
-        {enrollError && (
-          <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mt-3">{enrollError}</p>
-        )}
-      </section>
+            <div className="w-full md:w-[400px]">
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl p-6 text-center transition-colors cursor-pointer group"
+              >
+                <div className="text-indigo-400 group-hover:text-indigo-600 mb-2 transition-colors">
+                  <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <p className="text-sm font-bold text-indigo-800">Arrastra tu archivo CSV/XLS aquí</p>
+                <p className="text-xs text-indigo-500 mt-1">o haz clic para explorar</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              {importStudents.isPending && (
+                <p className="text-sm text-slate-500 mt-2 text-center">Importando...</p>
+              )}
+            </div>
+          </div>
+          {importError && (
+            <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mt-4">{importError}</p>
+          )}
+          {importSuccess && (
+            <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 mt-4">{importSuccess}</p>
+          )}
+        </section>
+      )}
 
       {/* Student List */}
       <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
@@ -499,7 +462,7 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
               const creditInfo = studentCreditMap[s.id];
               const totalCredits = creditInfo?.totalCredits ?? 0;
               const pointsValue = creditInfo?.pointsValue ?? 0;
-              const canCanjear = totalCredits >= 5;
+              const canCanjear = totalCredits > 0;
 
               return (
                 <div key={s.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white hover:bg-slate-50 border border-transparent hover:border-slate-100 p-4 rounded-2xl transition-colors group">
@@ -522,24 +485,18 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
                   </div>
                   <div className="col-span-1 md:col-span-2 flex items-center md:justify-end gap-2">
                     <div className={`px-3 py-1.5 rounded-lg text-right w-fit md:w-full ${
-                      totalCredits >= 5
+                      totalCredits > 0
                         ? 'bg-emerald-50 border border-emerald-100'
                         : 'bg-slate-50 border border-slate-100'
                     }`}>
                       <span className={`text-sm font-bold ${
-                        totalCredits >= 5 ? 'text-emerald-700' : 'text-slate-600'
+                        totalCredits > 0 ? 'text-emerald-700' : 'text-slate-600'
                       }`}>
                         {totalCredits} <span className="text-[10px] uppercase font-bold text-slate-400">Cred</span>
                       </span>
                     </div>
                   </div>
                   <div className="col-span-1 md:col-span-3 flex justify-end md:justify-center gap-2">
-                    <button
-                      onClick={() => handleUnenroll(s.id)}
-                      className="bg-white border-2 border-slate-100 hover:border-rose-300 text-slate-500 hover:text-rose-600 font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
-                    >
-                      Desinscribir
-                    </button>
                     <button
                       onClick={() => canCanjear && setCanjearModal({ student: s, credits: totalCredits, points: pointsValue })}
                       disabled={!canCanjear}
@@ -548,7 +505,7 @@ const StudentsTab = ({ commission, students, studentCreditMap }) => {
                           ? 'bg-amber-100 hover:bg-amber-400 text-amber-700 hover:text-amber-900'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70'
                       }`}
-                      title={!canCanjear ? 'Necesita al menos 5 créditos' : 'Canjear créditos'}
+                      title={!canCanjear ? 'Sin créditos para canjear' : 'Canjear créditos'}
                     >
                       <span>🎁</span> Canjear
                     </button>
