@@ -37,6 +37,7 @@ export function useUpdateGroup() {
     mutationFn: groupService.update,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.id) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
     },
   });
 }
@@ -58,9 +59,8 @@ export function useAddGroupMember() {
   return useMutation({
     mutationFn: groupService.addMember,
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.groupId) });
-      queryClient.invalidateQueries({ queryKey: studentKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: studentKeys.all });
     },
   });
 }
@@ -71,9 +71,8 @@ export function useRemoveGroupMember() {
   return useMutation({
     mutationFn: groupService.removeMember,
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.groupId) });
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: studentKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: studentKeys.all });
     },
   });
 }

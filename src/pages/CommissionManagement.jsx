@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
 import { useStudents, useImportStudents, useEnrollStudent, useUnenrollStudent } from '../hooks/useStudents';
-import { useGroups } from '../hooks/useGroups';
+import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import Header from '../components/Header';
 
 const TABS = [
@@ -13,7 +13,7 @@ const TABS = [
 
 const CommissionManagement = () => {
   const { id } = useParams();
-  const [activeTab, setActiveTab] = useState('config');
+  const [activeTab, setActiveTab] = useState('groups');
 
   const { data: commissionData, isLoading: loadingCommission } = useCommission(id);
   const { data: studentsData } = useStudents(id);
@@ -486,109 +486,403 @@ const StudentsTab = ({ commission, students }) => {
 };
 
 const GroupsTab = ({ commission, students, groups }) => {
-  const unassigned = students.filter((s) => !s.group);
+  const [selectedGroupId, setSelectedGroupId] = useState(groups.length > 0 ? groups[0].id : null);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
 
   return (
-    <div className="flex flex-col xl:flex-row gap-8">
-      <aside className="w-full xl:w-96">
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
-          <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
-            <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-              <span className="text-rose-500">⚠️</span> Sin Asignar
-            </h2>
-            <span className="bg-rose-50 text-rose-600 font-bold px-2 py-1 rounded-lg text-sm">{unassigned.length} Alumnos</span>
+    <div className="flex flex-col xl:flex-row gap-6 flex-1 min-h-0">
+      {/* Left Column: Group Directory */}
+      <aside className="w-full xl:w-[380px] flex flex-col gap-4 flex-shrink-0">
+        <button
+          onClick={() => setShowCreateGroup(true)}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-2xl transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <span className="text-xl leading-none">+</span> Crear Nuevo Grupo
+        </button>
+
+        <div className="bg-white rounded-[2rem] p-5 shadow-sm border border-slate-100 flex-1 flex flex-col min-h-0">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Directorio ({groups.length})</h2>
           </div>
-          {unassigned.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">Todos los alumnos tienen grupo</p>
-          ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {unassigned.map((s) => (
-                <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between hover:border-indigo-300 transition-colors cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800 leading-tight">{s.lastName}, {s.firstName}</p>
-                      <p className="text-[11px] font-medium text-slate-500">{s.fileNumber}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+
+          <div className="flex flex-col gap-2 overflow-y-auto pr-1 flex-1">
+            {groups.map((g) => (
+              <GroupDirectoryItem
+                key={g.id}
+                group={g}
+                minSize={commission.minGroupSize}
+                isSelected={g.id === selectedGroupId}
+                onSelect={() => setSelectedGroupId(g.id)}
+              />
+            ))}
+            {groups.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">No hay grupos creados</p>
+            )}
+          </div>
         </div>
       </aside>
 
-      <section className="flex-1">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-black text-slate-800">Grupos Activos</h2>
-          <span className="bg-slate-100 text-slate-600 font-bold px-2 py-1 rounded-lg text-sm border border-slate-200">{groups.length} Grupos</span>
-        </div>
-        {groups.length === 0 ? (
-          <p className="text-slate-400 text-center py-8">No hay grupos creados</p>
+      {/* Right Column: Group Editor */}
+      <section className="flex-1 bg-white rounded-[2rem] shadow-sm border border-slate-100 flex flex-col overflow-hidden relative min-h-0">
+        {selectedGroup ? (
+          <GroupEditor group={selectedGroup} students={students} maxSize={commission.maxGroupSize} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groups.map((g) => (
-              <GroupCard key={g.id} group={g} minSize={commission.minGroupSize} />
-            ))}
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 z-10">
+            <span className="text-4xl mb-4">🃏</span>
+            <p className="text-slate-500 font-medium">Selecciona un grupo a la izquierda o crea uno nuevo</p>
           </div>
         )}
       </section>
+
+      {showCreateGroup && (
+        <CreateGroupModal
+          commissionId={commission.id}
+          onClose={() => setShowCreateGroup(false)}
+          onCreated={(newGroup) => setSelectedGroupId(newGroup.id)}
+        />
+      )}
     </div>
   );
 };
 
-const GroupCard = ({ group, minSize }) => {
+const GroupDirectoryItem = ({ group, minSize, isSelected, onSelect }) => {
+  const deleteGroup = useDeleteGroup();
   const isComplete = group.members.length >= minSize;
 
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!confirm(`¿Eliminar el grupo "${group.name}"?`)) return;
+    try {
+      await deleteGroup.mutateAsync(group.id);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error al eliminar el grupo');
+    }
+  };
+
   return (
-    <div className={`bg-white rounded-3xl p-5 shadow-sm flex flex-col ${
-      isComplete ? 'border-2 border-slate-100 hover:border-indigo-200 transition-colors' : 'border-2 border-rose-200 shadow-md relative overflow-hidden'
-    }`}>
-      {!isComplete && (
-        <div className="absolute top-0 right-0 w-24 h-24 bg-rose-50 rounded-full blur-2xl -mr-10 -mt-10"></div>
-      )}
-      <div className="flex justify-between items-start mb-4 relative">
-        <div>
-          <h3 className="text-lg font-bold text-slate-800 mt-2 leading-tight">{group.name}</h3>
+    <div
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
+      className={`text-left rounded-xl p-3 cursor-pointer transition-colors relative group ${
+        isSelected
+          ? 'bg-indigo-50 border-2 border-indigo-600'
+          : isComplete
+            ? 'bg-white border-2 border-slate-100 hover:border-slate-300'
+            : 'bg-rose-50 border-2 border-rose-100 hover:border-rose-300'
+      }`}
+    >
+      <div className="flex justify-between items-start mb-1">
+        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+          isSelected
+            ? 'text-indigo-600 bg-indigo-100'
+            : isComplete
+              ? 'text-slate-500 bg-slate-100 group-hover:bg-slate-200'
+              : 'text-rose-600 bg-rose-100'
+        }`}>
+          {group.name.substring(0, 6).toUpperCase()}
+        </span>
+        <span className={`text-xs font-bold ${
+          isSelected ? 'text-indigo-700' : isComplete ? 'text-slate-500' : 'text-rose-600'
+        }`}>
+          {isComplete ? `${group.members.length} Alumnos` : `⚠️ ${group.members.length} Alumno${group.members.length !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+      <h3 className={`text-base font-bold truncate pr-6 ${
+        isSelected ? 'text-slate-900' : isComplete ? 'text-slate-700' : 'text-rose-900'
+      }`}>
+        {group.name}
+      </h3>
+      <button
+        onClick={handleDelete}
+        className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-1"
+        title="Eliminar grupo"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
+  );
+};
+
+const GroupEditor = ({ group, students, maxSize }) => {
+  const [name, setName] = useState(group.name);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const updateGroup = useUpdateGroup();
+  const addMember = useAddGroupMember();
+  const removeMember = useRemoveGroupMember();
+
+  const isComplete = group.members.length >= maxSize;
+
+  const sortedStudents = [...students].sort((a, b) => {
+    const aHasGroup = !!a.group;
+    const bHasGroup = !!b.group;
+    if (!aHasGroup && bHasGroup) return -1;
+    if (aHasGroup && !bHasGroup) return 1;
+    return a.lastName.localeCompare(b.lastName);
+  });
+
+  const filteredStudents = search.length > 0
+    ? sortedStudents.filter((s) => {
+        const q = search.toLowerCase();
+        return (
+          s.lastName.toLowerCase().includes(q) ||
+          s.firstName.toLowerCase().includes(q) ||
+          s.fileNumber.toLowerCase().includes(q)
+        );
+      })
+    : sortedStudents;
+
+  const handleSaveName = async () => {
+    if (!name.trim()) return;
+    try {
+      await updateGroup.mutateAsync({ id: group.id, name: name.trim() });
+      setSuccess('Nombre actualizado');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al actualizar');
+    }
+  };
+
+  const handleAddMember = async (studentId) => {
+    try {
+      await addMember.mutateAsync({ groupId: group.id, studentId });
+      setSearch('');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al agregar integrante');
+    }
+  };
+
+  const handleRemoveMember = async (studentId) => {
+    try {
+      await removeMember.mutateAsync({ groupId: group.id, studentId });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al quitar integrante');
+    }
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200">
+            Grupo
+          </span>
+          {isComplete ? (
+            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+              </svg> Completo
+            </span>
+          ) : (
+            <span className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded-md">
+              ⚠️ Incompleto
+            </span>
+          )}
         </div>
-        {isComplete ? (
-          <span className="bg-emerald-50 border border-emerald-100 text-emerald-600 p-1.5 rounded-lg">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-            </svg>
-          </span>
-        ) : (
-          <span className="bg-rose-100 text-rose-600 text-xs font-bold px-2 py-1.5 rounded-lg flex items-center gap-1">
-            ⚠️ Incompleto
-          </span>
-        )}
+
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={handleSaveName}
+          onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+          placeholder="Escribe el nombre del grupo..."
+          className="w-full text-3xl sm:text-4xl font-black text-slate-800 bg-transparent border-none outline-none focus:ring-0 p-0 placeholder:text-slate-300 transition-colors hover:text-indigo-900 focus:text-indigo-700"
+        />
+        {success && <p className="text-xs text-emerald-600 font-bold mt-1">{success}</p>}
+        {error && <p className="text-xs text-red-600 font-bold mt-1">{error}</p>}
       </div>
 
-      <ul className="space-y-2 mb-6 flex-1 relative">
-        {group.members.map((m) => (
-          <li key={m.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg group">
-            <span className="text-sm font-medium text-slate-700">{m.lastName}, {m.firstName}</span>
-            <button className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </li>
-        ))}
-        {!isComplete && (
-          <li className="flex items-center justify-center border-2 border-dashed border-slate-200 bg-slate-50/50 px-3 py-2 rounded-lg text-xs font-medium text-slate-400">
-            Falta {minSize - group.members.length} integrante (mínimo)
-          </li>
-        )}
-      </ul>
+      {/* Two-column editor */}
+      <div className="flex-1 flex flex-col xl:flex-row min-h-0 overflow-hidden">
+        {/* Left: Search & Add */}
+        <div className="w-full xl:w-1/2 p-6 sm:p-8 border-b xl:border-b-0 xl:border-r border-slate-100 flex flex-col gap-4 overflow-hidden">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <span>🔍</span> Buscar y Agregar Alumno
+          </h3>
 
-      <div className={`pt-4 border-t ${isComplete ? 'border-slate-100' : 'border-rose-100'} relative`}>
-        <button className={`w-full text-center text-sm font-bold py-2 rounded-xl transition-colors cursor-pointer ${
-          isComplete
-            ? 'text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-dashed border-indigo-200'
-            : 'text-white bg-rose-500 hover:bg-rose-600 shadow-md shadow-rose-200'
-        }`}>
-          {isComplete ? '+ Añadir integrante' : 'Asignar alumno aquí'}
-        </button>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Nombre o Legajo..."
+              className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium shadow-sm"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 mt-2 space-y-2">
+            {search.length > 0 && (
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Resultados para "{search}"
+              </p>
+            )}
+            {search.length === 0 && (
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Todos los alumnos
+              </p>
+            )}
+            {filteredStudents.length === 0 ? (
+              <p className="text-sm text-slate-400">Sin resultados</p>
+            ) : (
+              filteredStudents.map((s) => {
+                const alreadyInGroup = group.members.some((m) => m.id === s.id);
+                const hasOtherGroup = s.group && !alreadyInGroup;
+
+                return (
+                  <div key={s.id} className={`flex items-center justify-between p-3 border rounded-xl transition-colors ${
+                    alreadyInGroup || hasOtherGroup ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:border-indigo-300'
+                  }`}>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{s.lastName}, {s.firstName}</p>
+                      <p className="text-xs text-slate-500">
+                        {s.fileNumber} ·{' '}
+                        {alreadyInGroup ? (
+                          <span className="text-indigo-500 font-medium">Ya en este grupo</span>
+                        ) : hasOtherGroup ? (
+                          <span className="text-amber-500 font-medium">En {s.group.name}</span>
+                        ) : (
+                          <span className="text-rose-500 font-medium">Sin grupo</span>
+                        )}
+                      </p>
+                    </div>
+                    {alreadyInGroup ? (
+                      <button className="bg-slate-200 text-slate-500 font-bold py-1.5 px-3 rounded-lg text-xs cursor-not-allowed">
+                        Agregado
+                      </button>
+                    ) : hasOtherGroup ? (
+                      <button className="bg-slate-200 text-slate-500 font-bold py-1.5 px-3 rounded-lg text-xs cursor-not-allowed">
+                        Asignado
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleAddMember(s.id)}
+                        className="bg-indigo-100 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-colors cursor-pointer"
+                      >
+                        + Agregar
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right: Current Members */}
+        <div className="w-full xl:w-1/2 p-6 sm:p-8 bg-slate-50/30 flex flex-col gap-4 overflow-hidden">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <span>👥</span> Integrantes Actuales
+            </h3>
+            <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-md">
+              {group.members.length}/{maxSize} max
+            </span>
+          </div>
+
+          <ul className="space-y-3 flex-1 overflow-y-auto">
+            {group.members.map((m) => (
+              <li key={m.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm group">
+                <div>
+                  <p className="text-sm font-bold text-slate-800">{m.lastName}, {m.firstName}</p>
+                  <p className="text-xs text-slate-500">{m.fileNumber}</p>
+                </div>
+                <button
+                  onClick={() => handleRemoveMember(m.id)}
+                  className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-lg transition-colors cursor-pointer"
+                  title="Quitar del grupo"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+            {group.members.length === 0 && (
+              <li className="text-center py-8 text-slate-400 text-sm">
+                No hay integrantes en este grupo
+              </li>
+            )}
+          </ul>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const CreateGroupModal = ({ commissionId, onClose, onCreated }) => {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const createGroup = useCreateGroup();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!name.trim()) {
+      setError('El nombre es obligatorio');
+      return;
+    }
+
+    try {
+      const result = await createGroup.mutateAsync({ commissionId, name: name.trim() });
+      onCreated?.(result.data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al crear el grupo');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+        <h3 className="text-2xl font-black text-slate-800 mb-6">Nuevo Grupo</h3>
+        <form onSubmit={handleSubmit}>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Los Capos"
+              className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mt-3">{error}</p>
+          )}
+          <div className="flex gap-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={createGroup.isPending}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+            >
+              {createGroup.isPending ? 'Creando...' : 'Crear'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
