@@ -62,17 +62,17 @@ const CommissionCard = ({ commission, subjectName }) => {
           ⚙️ Gestionar
         </Link>
         <Link
-          to={`/commission/${commission.id}/students`}
+          to={`/commission/${commission.id}?tab=students`}
           className="bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
         >
           👥 Alumnos
         </Link>
         {hasStudents && (
           <Link
-            to={`/commission/${commission.id}/credits`}
+            to={`/commission/${commission.id}/history`}
             className="col-span-2 bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-sm text-center"
           >
-            📊 Ver Créditos
+            📊 Ver Historial
           </Link>
         )}
       </div>

@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCommission } from '../hooks/useCommissions';
 import { useSessions, useCreateSession, useCloseSession } from '../hooks/useSessions';
+import { useSession } from '../hooks/useSessions';
 import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle } from '../hooks/useRaffles';
+import { useGroups } from '../hooks/useGroups';
+import { useReverseCredit } from '../hooks/useCredits';
 import Header from '../components/Header';
 
 const CommissionDetail = () => {
@@ -168,23 +171,66 @@ const CommissionDetail = () => {
 
 const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => {
   const { data: rafflesData } = useRaffles(session.id);
+  const { data: sessionDetailData } = useSession(session.id);
+  const { data: groupsData } = useGroups(commission.id);
   const createRaffle = useCreateRaffle();
   const resolveResult = useResolveRaffleResult();
   const rerunRaffle = useRerunRaffle();
+  const reverseCredit = useReverseCredit();
 
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
+  const [undoError, setUndoError] = useState('');
 
   const raffles = rafflesData?.data ?? [];
+  const sessionDetail = sessionDetailData?.data;
+  const creditEvents = sessionDetail?.creditEvents ?? [];
+  const groups = groupsData?.data ?? [];
   const latestRaffle = raffles.length > 0 ? raffles[raffles.length - 1] : null;
   const pendingResults = latestRaffle?.results?.filter((r) => r.status === 'PENDING') ?? [];
+
+  const usedGroupIds = new Set(
+    raffles.flatMap((r) =>
+      r.results
+        .filter((res) => res.status !== 'PENDING')
+        .map((res) => res.group.id)
+    )
+  );
+
+  const availableGroups = groups.filter(
+    (g) => g.isActive && !usedGroupIds.has(g.id)
+  );
+
+  const availableCount = availableGroups.length;
+  const noGroupsAvailable = availableCount === 0;
+
+  const cappedQuantity = Math.min(quantity, Math.max(1, availableCount));
+
+  const handleUndo = async () => {
+    setUndoError('');
+    if (!lastCreditEvent) return;
+    if (lastCreditEvent.isReversal) {
+      setUndoError('Este evento ya fue revertido');
+      return;
+    }
+    if (!confirm(`¿Deshacer el crédito de ${lastCreditEvent.group?.name || 'este grupo'}?`)) return;
+    try {
+      await reverseCredit.mutateAsync(lastCreditEvent.id);
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setUndoError('Este crédito ya fue revertido anteriormente');
+      } else {
+        setUndoError(err.response?.data?.message || 'Error al deshacer');
+      }
+    }
+  };
 
   const handleLaunchRaffle = async () => {
     setError('');
     try {
       await createRaffle.mutateAsync({
         sessionId: session.id,
-        quantity,
+        quantity: cappedQuantity,
       });
     } catch (err) {
       setError(err.response?.data?.message || 'Error al lanzar el sorteo');
@@ -195,7 +241,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     try {
       await resolveResult.mutateAsync({ resultId, status });
     } catch (err) {
-      alert(err.response?.data?.message || 'Error al resolver');
+      setError(err.response?.data?.message || 'Error al resolver');
     }
   };
 
@@ -209,14 +255,42 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     }
   };
 
-  const allHistory = raffles.flatMap((r) =>
+  const raffleHistory = raffles.flatMap((r) =>
     r.results.map((res) => ({
       ...res,
+      type: 'raffle',
       raffleId: r.id,
       roundNumber: r.roundNumber,
       createdAt: r.createdAt,
     }))
   );
+
+  const creditHistory = creditEvents
+    .filter((e) => !e.raffleResult)
+    .filter((e, i, arr) => {
+      if (e.raffleResult?.id) {
+        return arr.findIndex((x) => x.raffleResult?.id === e.raffleResult?.id) === i;
+      }
+      return arr.findIndex((x) => x.id === e.id) === i;
+    })
+    .map((e) => ({
+      ...e,
+      type: 'credit',
+    }));
+
+  const reversedIds = new Set(
+    creditEvents.filter((e) => e.isReversal || e.amount < 0).map((e) => e.reversedById).filter(Boolean)
+  );
+
+  const lastCreditEvent = creditEvents
+    .filter((e) => !e.isReversal && !reversedIds.has(e.id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null;
+
+  const allHistory = [...raffleHistory, ...creditHistory]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const participatedCount = allHistory.filter((h) => h.status === 'PARTICIPATED' || (h.type === 'credit' && h.amount > 0 && !h.isReversal)).length;
+  const absentCount = allHistory.filter((h) => h.status === 'ABSENT').length;
 
   return (
     <div className="bg-zinc-50 text-slate-800 min-h-screen flex flex-col">
@@ -262,18 +336,25 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-600 mb-2">Cantidad de grupos</label>
+              <label className="block text-sm font-semibold text-slate-600 mb-2">
+                Cantidad de grupos
+                <span className="ml-2 text-xs font-medium text-slate-400">
+                  ({availableCount} disponible{availableCount !== 1 ? 's' : ''})
+                </span>
+              </label>
               <div className="flex items-center bg-slate-50 rounded-2xl border border-slate-200 p-1">
                 <button
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl"
+                  disabled={noGroupsAvailable}
+                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   -
                 </button>
-                <span className="flex-1 text-center bg-transparent font-black text-2xl text-slate-800">{quantity}</span>
+                <span className="flex-1 text-center bg-transparent font-black text-2xl text-slate-800">{cappedQuantity}</span>
                 <button
                   onClick={() => setQuantity((q) => q + 1)}
-                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl"
+                  disabled={noGroupsAvailable || cappedQuantity >= availableCount}
+                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   +
                 </button>
@@ -285,18 +366,28 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</p>
           )}
 
+          {noGroupsAvailable && raffles.length > 0 ? (
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-2xl py-3 px-4 text-center">
+              <p className="text-sm font-bold text-amber-700">Todos los grupos ya participaron hoy</p>
+            </div>
+          ) : noGroupsAvailable ? (
+            <div className="mt-2 bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-center">
+              <p className="text-sm font-bold text-slate-500">No hay grupos creados</p>
+            </div>
+          ) : null}
+
           <button
             onClick={handleLaunchRaffle}
-            disabled={createRaffle.isPending}
-            className="mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-2xl py-4 text-lg font-bold w-full shadow-lg shadow-indigo-200 transition-all cursor-pointer flex items-center justify-center gap-2"
+            disabled={createRaffle.isPending || noGroupsAvailable}
+            className="mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-2xl py-4 text-lg font-bold w-full shadow-lg shadow-indigo-200 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:cursor-not-allowed"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
             </svg>
-            {createRaffle.isPending ? 'Sorteando...' : 'Lanzar Sorteo'}
+            {createRaffle.isPending ? 'Sorteando...' : noGroupsAvailable ? 'Sin grupos disponibles' : 'Lanzar Sorteo'}
           </button>
 
-          {latestRaffle && pendingResults.length === 0 && (
+          {latestRaffle && pendingResults.length === 0 && !noGroupsAvailable && (
             <button
               onClick={handleRerun}
               disabled={rerunRaffle.isPending}
@@ -343,11 +434,11 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           )}
 
           {/* Previous rounds */}
-          {allHistory.length > pendingResults.length && (
+          {raffleHistory.length > pendingResults.length && (
             <div className="mt-4">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Rondas anteriores</h3>
               <div className="flex flex-col gap-2">
-                {allHistory
+                {raffleHistory
                   .filter((h) => h.status !== 'PENDING')
                   .slice(-10)
                   .reverse()
@@ -378,8 +469,40 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           )}
         </section>
 
-        {/* Right: Live Feed */}
+        {/* Right: Undo & Live Feed */}
         <aside className="w-full xl:col-span-3 flex flex-col gap-4 h-full">
+          <button
+            onClick={handleUndo}
+            disabled={!lastCreditEvent || lastCreditEvent.isReversal || reversedIds.has(lastCreditEvent.id) || reverseCredit.isPending}
+            className="bg-amber-100 hover:bg-amber-200 disabled:bg-slate-100 text-amber-800 disabled:text-slate-400 border-2 border-amber-200/50 disabled:border-slate-200 rounded-2xl py-3 px-4 font-bold flex justify-center items-center gap-3 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-sm"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            Deshacer última acción
+          </button>
+
+          {undoError && (
+            <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{undoError}</p>
+          )}
+
+          {participatedCount > 0 && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-2xl font-black text-emerald-600">{participatedCount}</p>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Participaron</p>
+              </div>
+              <div>
+                <p className="text-2xl font-black text-rose-600">{absentCount}</p>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Ausentes</p>
+              </div>
+              <div>
+                <p className="text-2xl font-black text-indigo-600">{raffles.length}</p>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Rondas</p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 flex-1 flex flex-col min-h-[300px]">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-6 flex items-center gap-2">
               <span>📋</span> Registro en vivo
@@ -389,47 +512,66 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
               {allHistory.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-4">Sin acciones registradas</p>
               ) : (
-                allHistory
-                  .filter((h) => h.status !== 'PENDING')
-                  .slice(-20)
-                  .reverse()
-                  .map((h) => (
+                allHistory.slice(0, 20).map((h) => {
+                  const isRaffle = h.type === 'raffle';
+                  const isParticipated = h.status === 'PARTICIPATED';
+                  const isAbsent = h.status === 'ABSENT';
+                  const isSkipped = h.status === 'SKIPPED';
+                  const isCredit = h.type === 'credit';
+                  const isReversal = h.isReversal || (h.amount < 0);
+                  const wasReversed = reversedIds.has(h.id);
+
+                  if (wasReversed) return null;
+
+                  return (
                     <div
                       key={h.id}
                       className={`relative pl-6 border-l-2 ${
-                        h.status === 'PARTICIPATED'
-                          ? 'border-emerald-200'
-                          : h.status === 'ABSENT'
+                        isReversal
+                          ? 'border-amber-200'
+                          : isAbsent
                           ? 'border-rose-200'
+                          : isParticipated || isCredit
+                          ? 'border-emerald-200'
                           : 'border-slate-200'
                       }`}
                     >
                       <div
                         className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-4 border-white ${
-                          h.status === 'PARTICIPATED'
-                            ? 'bg-emerald-500'
-                            : h.status === 'ABSENT'
+                          isReversal
+                            ? 'bg-amber-500'
+                            : isAbsent
                             ? 'bg-rose-500'
+                            : isParticipated || isCredit
+                            ? 'bg-emerald-500'
                             : 'bg-slate-400'
                         }`}
                       ></div>
                       <p className="text-sm font-bold text-slate-800">
-                        {h.group.name}{' '}
-                        {h.status === 'PARTICIPATED' && (
+                        {h.group?.name || 'Grupo'}{' '}
+                        {isReversal && (
+                          <span className="text-amber-600 font-black">Crédito revertido</span>
+                        )}
+                        {isParticipated && !isReversal && (
                           <span className="text-emerald-600 font-black">+1 crédito</span>
                         )}
-                        {h.status === 'ABSENT' && (
+                        {isAbsent && (
                           <span className="text-rose-600 font-black">Ausente</span>
                         )}
-                        {h.status === 'SKIPPED' && (
+                        {isSkipped && (
                           <span className="text-slate-500 font-black">Omitido</span>
+                        )}
+                        {isCredit && !isReversal && (
+                          <span className="text-emerald-600 font-black">+{h.amount} crédito</span>
                         )}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Ronda {h.roundNumber} • {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                        {isRaffle && `Ronda ${h.roundNumber} • `}
+                        {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                  ))
+                  );
+                })
               )}
             </div>
           </div>

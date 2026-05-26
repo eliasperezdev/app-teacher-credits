@@ -28,6 +28,7 @@ export function useCreateCredit() {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: creditKeys.lists(variables.groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: creditKeys.all });
     },
   });
 }

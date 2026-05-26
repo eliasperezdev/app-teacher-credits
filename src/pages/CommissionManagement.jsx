@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
 import { useStudents, useImportStudents, useEnrollStudent, useUnenrollStudent } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
+import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
 import Header from '../components/Header';
 
 const TABS = [
@@ -13,15 +14,36 @@ const TABS = [
 
 const CommissionManagement = () => {
   const { id } = useParams();
-  const [activeTab, setActiveTab] = useState('groups');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'groups');
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) setActiveTab(tab);
+  }, [searchParams]);
 
   const { data: commissionData, isLoading: loadingCommission } = useCommission(id);
   const { data: studentsData } = useStudents(id);
   const { data: groupsData } = useGroups(id);
+  const { data: creditSummaryData } = useCreditSummary(id);
 
   const commission = commissionData?.data;
   const students = studentsData?.data ?? [];
   const groups = groupsData?.data ?? [];
+  const creditSummary = creditSummaryData?.data;
+
+  const studentCreditMap = {};
+  if (creditSummary?.groups) {
+    for (const group of creditSummary.groups) {
+      for (const member of group.members) {
+        studentCreditMap[member.id] = {
+          totalCredits: member.totalCredits,
+          pointsValue: member.pointsValue,
+          creditValue: creditSummary.creditValue,
+        };
+      }
+    }
+  }
 
   const irregularCount = groups.filter((g) =>
     g.members.length < (commission?.minGroupSize ?? 3)
@@ -97,7 +119,7 @@ const CommissionManagement = () => {
         </div>
 
         {activeTab === 'config' && <ConfigTab commission={commission} />}
-        {activeTab === 'students' && <StudentsTab commission={commission} students={students} />}
+        {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} />}
         {activeTab === 'groups' && <GroupsTab commission={commission} students={students} groups={groups} />}
       </main>
     </div>
@@ -282,17 +304,21 @@ const ConfigTab = ({ commission }) => {
   );
 };
 
-const StudentsTab = ({ commission, students }) => {
+const StudentsTab = ({ commission, students, studentCreditMap }) => {
   const [search, setSearch] = useState('');
   const [fileNumber, setFileNumber] = useState('');
   const [enrollError, setEnrollError] = useState('');
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
+  const [canjearModal, setCanjearModal] = useState(null);
+  const [canjearError, setCanjearError] = useState('');
+  const [canjearSuccess, setCanjearSuccess] = useState('');
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
   const enrollStudent = useEnrollStudent();
   const unenrollStudent = useUnenrollStudent();
+  const createCredit = useCreateCredit();
 
   const filtered = students.filter((s) => {
     const q = search.toLowerCase();
@@ -341,6 +367,25 @@ const StudentsTab = ({ commission, students }) => {
       await unenrollStudent.mutateAsync({ commissionId: commission.id, studentId });
     } catch (err) {
       alert(err.response?.data?.message || 'Error al desinscribir');
+    }
+  };
+
+  const handleCanjear = async () => {
+    if (!canjearModal) return;
+    setCanjearError('');
+    setCanjearSuccess('');
+
+    try {
+      await createCredit.mutateAsync({
+        groupId: canjearModal.student.group.id,
+        amount: -canjearModal.credits,
+        reason: 'Canje de créditos',
+      });
+      setCanjearSuccess('Créditos canjeados correctamente');
+      setCanjearModal(null);
+      setTimeout(() => setCanjearSuccess(''), 3000);
+    } catch (err) {
+      setCanjearError(err.response?.data?.message || 'Error al canjear créditos');
     }
   };
 
@@ -437,10 +482,11 @@ const StudentsTab = ({ commission, students }) => {
 
         {/* Table Headers */}
         <div className="hidden md:grid grid-cols-12 gap-4 px-4 pb-3 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
-          <div className="col-span-4">Alumno</div>
+          <div className="col-span-3">Alumno</div>
           <div className="col-span-2">Legajo</div>
           <div className="col-span-2">Grupo</div>
-          <div className="col-span-2 text-center">Acciones</div>
+          <div className="col-span-2 text-right">Créditos</div>
+          <div className="col-span-3 text-center">Acciones</div>
         </div>
 
         {filtered.length === 0 ? (
@@ -449,38 +495,115 @@ const StudentsTab = ({ commission, students }) => {
           </p>
         ) : (
           <div className="flex flex-col gap-2 mt-3">
-            {filtered.map((s) => (
-              <div key={s.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white hover:bg-slate-50 border border-transparent hover:border-slate-100 p-4 rounded-2xl transition-colors group">
-                <div className="col-span-1 md:col-span-4 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-sm">
-                    {s.firstName[0]}{s.lastName[0]}
+            {filtered.map((s) => {
+              const creditInfo = studentCreditMap[s.id];
+              const totalCredits = creditInfo?.totalCredits ?? 0;
+              const pointsValue = creditInfo?.pointsValue ?? 0;
+              const canCanjear = totalCredits >= 5;
+
+              return (
+                <div key={s.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white hover:bg-slate-50 border border-transparent hover:border-slate-100 p-4 rounded-2xl transition-colors group">
+                  <div className="col-span-1 md:col-span-3 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-sm">
+                      {s.firstName[0]}{s.lastName[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{s.lastName}, {s.firstName}</p>
+                      <p className="text-xs text-slate-500 md:hidden mt-0.5">Leg: {s.fileNumber}{s.group ? ` • G: ${s.group.name}` : ''}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">{s.lastName}, {s.firstName}</p>
-                    <p className="text-xs text-slate-500 md:hidden mt-0.5">Leg: {s.fileNumber}</p>
+                  <div className="hidden md:block col-span-2 text-sm text-slate-600 font-medium">{s.fileNumber}</div>
+                  <div className="hidden md:block col-span-2">
+                    {s.group ? (
+                      <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-md">{s.group.name}</span>
+                    ) : (
+                      <span className="bg-rose-50 text-rose-600 text-xs font-bold px-2 py-1 rounded-md border border-rose-100">Sin grupo</span>
+                    )}
+                  </div>
+                  <div className="col-span-1 md:col-span-2 flex items-center md:justify-end gap-2">
+                    <div className={`px-3 py-1.5 rounded-lg text-right w-fit md:w-full ${
+                      totalCredits >= 5
+                        ? 'bg-emerald-50 border border-emerald-100'
+                        : 'bg-slate-50 border border-slate-100'
+                    }`}>
+                      <span className={`text-sm font-bold ${
+                        totalCredits >= 5 ? 'text-emerald-700' : 'text-slate-600'
+                      }`}>
+                        {totalCredits} <span className="text-[10px] uppercase font-bold text-slate-400">Cred</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="col-span-1 md:col-span-3 flex justify-end md:justify-center gap-2">
+                    <button
+                      onClick={() => handleUnenroll(s.id)}
+                      className="bg-white border-2 border-slate-100 hover:border-rose-300 text-slate-500 hover:text-rose-600 font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Desinscribir
+                    </button>
+                    <button
+                      onClick={() => canCanjear && setCanjearModal({ student: s, credits: totalCredits, points: pointsValue })}
+                      disabled={!canCanjear}
+                      className={`font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                        canCanjear
+                          ? 'bg-amber-100 hover:bg-amber-400 text-amber-700 hover:text-amber-900'
+                          : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70'
+                      }`}
+                      title={!canCanjear ? 'Necesita al menos 5 créditos' : 'Canjear créditos'}
+                    >
+                      <span>🎁</span> Canjear
+                    </button>
                   </div>
                 </div>
-                <div className="hidden md:block col-span-2 text-sm text-slate-600 font-medium">{s.fileNumber}</div>
-                <div className="hidden md:block col-span-2">
-                  {s.group ? (
-                    <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-md">{s.group.name}</span>
-                  ) : (
-                    <span className="bg-rose-50 text-rose-600 text-xs font-bold px-2 py-1 rounded-md border border-rose-100">Sin grupo</span>
-                  )}
-                </div>
-                <div className="col-span-1 md:col-span-2 flex justify-end md:justify-center">
-                  <button
-                    onClick={() => handleUnenroll(s.id)}
-                    className="bg-white border-2 border-slate-100 hover:border-rose-300 text-slate-500 hover:text-rose-600 font-bold py-2 px-4 rounded-xl text-xs transition-colors cursor-pointer"
-                  >
-                    Desinscribir
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
+
+      {canjearModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-2xl font-black text-slate-800 mb-2">Canjear Créditos</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              <span className="font-bold">{canjearModal.student.lastName}, {canjearModal.student.firstName}</span> tiene{' '}
+              <span className="font-bold text-emerald-600">{canjearModal.credits} créditos</span>
+              {canjearModal.points > 0 && (
+                <span> ({canjearModal.points.toFixed(2)} pts)</span>
+              )}
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <p className="text-sm font-bold text-amber-700">
+                Esta acción restará todos los créditos del alumno. ¿Confirmar canje?
+              </p>
+            </div>
+
+            {canjearError && (
+              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4">{canjearError}</p>
+            )}
+            {canjearSuccess && (
+              <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 mb-4">{canjearSuccess}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setCanjearModal(null); setCanjearError(''); }}
+                className="flex-1 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCanjear}
+                disabled={createCredit.isPending}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                {createCredit.isPending ? 'Canjeando...' : 'Confirmar Canje'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

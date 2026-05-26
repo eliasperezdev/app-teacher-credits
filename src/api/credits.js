@@ -12,7 +12,7 @@ export const creditService = {
   },
 
   reverse: async (id) => {
-    const response = await axiosInstance.post(`/credits/${id}/reverse`);
+    const response = await axiosInstance.post(`/credits/${id}/reverse`, {});
     return response.data;
   },
 
