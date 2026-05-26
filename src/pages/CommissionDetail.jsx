@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCommission } from '../hooks/useCommissions';
-import { useSessions, useCreateSession } from '../hooks/useSessions';
+import { useSessions, useCreateSession, useCloseSession } from '../hooks/useSessions';
+import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle } from '../hooks/useRaffles';
 import Header from '../components/Header';
 
 const CommissionDetail = () => {
   const { id } = useParams();
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
-  const [justCreated, setJustCreated] = useState(false);
 
   const { data, isLoading: loadingCommission } = useCommission(id);
   const { data: sessionsData, isLoading: loadingSessions, refetch: refetchSessions } = useSessions(id);
   const createSession = useCreateSession();
+  const closeSession = useCloseSession();
 
   const commission = data?.data;
   const sessions = sessionsData?.data ?? [];
@@ -28,8 +29,6 @@ const CommissionDetail = () => {
     (s) => s.isClosed && s.sessionDate === today
   );
 
-  const hasSessionToday = !!openSession || !!closedTodaySession;
-
   const handleStartClass = async () => {
     setError('');
     try {
@@ -37,10 +36,19 @@ const CommissionDetail = () => {
         commissionId: id,
         notes: notes.trim() || undefined,
       });
-      setJustCreated(true);
       await refetchSessions();
     } catch (err) {
       setError(err.response?.data?.message || 'Error al iniciar la sesión');
+    }
+  };
+
+  const handleCloseClass = async () => {
+    if (!confirm('¿Cerrar la sesión de hoy?')) return;
+    try {
+      await closeSession.mutateAsync(openSession.id);
+      await refetchSessions();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error al cerrar la sesión');
     }
   };
 
@@ -72,6 +80,17 @@ const CommissionDetail = () => {
     );
   }
 
+  if (openSession) {
+    return (
+      <ClassConsole
+        commission={commission}
+        session={openSession}
+        onCloseClass={handleCloseClass}
+        closingSession={closeSession.isPending}
+      />
+    );
+  }
+
   return (
     <div className="bg-zinc-50 text-slate-800 min-h-screen flex flex-col">
       <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-10">
@@ -91,25 +110,13 @@ const CommissionDetail = () => {
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-medium">
               Comisión {commission.name}
-              {openSession && (
-                <span className="ml-2 text-emerald-600">• Sesión en curso</span>
-              )}
             </p>
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-[1400px] w-full mx-auto p-4 sm:p-8">
-        {openSession ? (
-          <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
-            <h2 className="text-2xl font-black text-slate-800 mb-2">Sesión Abierta</h2>
-            <p className="text-slate-500">
-              Sesión iniciada a las {new Date(openSession.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-              {openSession.notes && <span> — {openSession.notes}</span>}
-            </p>
-            <p className="text-sm text-indigo-600 font-bold mt-4">Consola de clase — Próximamente</p>
-          </div>
-        ) : closedTodaySession ? (
+        {closedTodaySession ? (
           <section className="max-w-lg mx-auto bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100 text-center">
             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,6 +162,327 @@ const CommissionDetail = () => {
           </section>
         )}
       </main>
+    </div>
+  );
+};
+
+const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => {
+  const { data: rafflesData } = useRaffles(session.id);
+  const createRaffle = useCreateRaffle();
+  const resolveResult = useResolveRaffleResult();
+  const rerunRaffle = useRerunRaffle();
+
+  const [quantity, setQuantity] = useState(1);
+  const [error, setError] = useState('');
+
+  const raffles = rafflesData?.data ?? [];
+  const latestRaffle = raffles.length > 0 ? raffles[raffles.length - 1] : null;
+  const pendingResults = latestRaffle?.results?.filter((r) => r.status === 'PENDING') ?? [];
+
+  const handleLaunchRaffle = async () => {
+    setError('');
+    try {
+      await createRaffle.mutateAsync({
+        sessionId: session.id,
+        quantity,
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al lanzar el sorteo');
+    }
+  };
+
+  const handleResolve = async (resultId, status) => {
+    try {
+      await resolveResult.mutateAsync({ resultId, status });
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error al resolver');
+    }
+  };
+
+  const handleRerun = async () => {
+    if (!latestRaffle) return;
+    setError('');
+    try {
+      await rerunRaffle.mutateAsync({ sessionId: session.id, raffleId: latestRaffle.id });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al re-sortear');
+    }
+  };
+
+  const allHistory = raffles.flatMap((r) =>
+    r.results.map((res) => ({
+      ...res,
+      raffleId: r.id,
+      roundNumber: r.roundNumber,
+      createdAt: r.createdAt,
+    }))
+  );
+
+  return (
+    <div className="bg-zinc-50 text-slate-800 min-h-screen flex flex-col">
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-10">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="bg-indigo-100 text-indigo-700 p-2 rounded-xl hidden sm:block">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">
+              {commission.subject?.name || 'Materia'}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium">
+              Comisión {commission.name} • Sesión en curso
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onCloseClass}
+            disabled={closingSession}
+            className="text-slate-400 hover:text-slate-700 font-medium p-2 sm:px-4 sm:py-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-2 disabled:opacity-50"
+          >
+            <span className="hidden sm:inline">{closingSession ? 'Cerrando...' : 'Cerrar Sesión'}</span>
+            <svg className="w-5 h-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 flex flex-col xl:grid xl:grid-cols-12 gap-6 items-start">
+        {/* Left: Raffle Panel */}
+        <aside className="w-full xl:col-span-3 bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
+          <div className="border-b border-slate-100 pb-4">
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <span>🎯</span> Nuevo Sorteo
+            </h2>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-600 mb-2">Cantidad de grupos</label>
+              <div className="flex items-center bg-slate-50 rounded-2xl border border-slate-200 p-1">
+                <button
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl"
+                >
+                  -
+                </button>
+                <span className="flex-1 text-center bg-transparent font-black text-2xl text-slate-800">{quantity}</span>
+                <button
+                  onClick={() => setQuantity((q) => q + 1)}
+                  className="w-12 h-12 flex items-center justify-center text-slate-500 hover:bg-white rounded-xl hover:shadow-sm transition-all cursor-pointer font-bold text-xl"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</p>
+          )}
+
+          <button
+            onClick={handleLaunchRaffle}
+            disabled={createRaffle.isPending}
+            className="mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-2xl py-4 text-lg font-bold w-full shadow-lg shadow-indigo-200 transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+            {createRaffle.isPending ? 'Sorteando...' : 'Lanzar Sorteo'}
+          </button>
+
+          {latestRaffle && pendingResults.length === 0 && (
+            <button
+              onClick={handleRerun}
+              disabled={rerunRaffle.isPending}
+              className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {rerunRaffle.isPending ? 'Re-sorteando...' : 'Re-sortear pendientes'}
+            </button>
+          )}
+        </aside>
+
+        {/* Center: Selected Groups */}
+        <section className="w-full xl:col-span-6 flex flex-col gap-4">
+          <div className="flex justify-between items-end px-2 mb-2">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-800">Grupos Seleccionados</h2>
+              <p className="text-slate-500 text-sm mt-1">
+                {latestRaffle
+                  ? `Ronda ${latestRaffle.roundNumber} • ${pendingResults.length} pendiente${pendingResults.length !== 1 ? 's' : ''}`
+                  : 'Sin sorteos aún'}
+              </p>
+            </div>
+          </div>
+
+          {pendingResults.length === 0 && raffles.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm text-center">
+              <span className="text-4xl mb-3">🎲</span>
+              <p className="text-slate-400 font-medium">Lanzá un sorteo para comenzar</p>
+            </div>
+          ) : pendingResults.length === 0 && latestRaffle ? (
+            <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
+              <span className="text-3xl mb-2">✅</span>
+              <p className="text-slate-500 font-medium">Todos los grupos de esta ronda fueron resueltos</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingResults.map((result) => (
+                <RaffleResultRow
+                  key={result.id}
+                  result={result}
+                  onResolve={handleResolve}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Previous rounds */}
+          {allHistory.length > pendingResults.length && (
+            <div className="mt-4">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Rondas anteriores</h3>
+              <div className="flex flex-col gap-2">
+                {allHistory
+                  .filter((h) => h.status !== 'PENDING')
+                  .slice(-10)
+                  .reverse()
+                  .map((h) => (
+                    <div
+                      key={h.id}
+                      className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between text-sm"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-700">{h.group.name}</span>
+                        <span className="text-slate-400 text-xs ml-2">Ronda {h.roundNumber}</span>
+                      </div>
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded-md ${
+                          h.status === 'PARTICIPATED'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : h.status === 'ABSENT'
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {h.status === 'PARTICIPATED' ? '🟢 Participó' : h.status === 'ABSENT' ? '🔴 Ausente' : '⚪ Omitido'}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Right: Live Feed */}
+        <aside className="w-full xl:col-span-3 flex flex-col gap-4 h-full">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-100 flex-1 flex flex-col min-h-[300px]">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-6 flex items-center gap-2">
+              <span>📋</span> Registro en vivo
+            </h3>
+
+            <div className="space-y-5 flex-1 overflow-y-auto pr-2">
+              {allHistory.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">Sin acciones registradas</p>
+              ) : (
+                allHistory
+                  .filter((h) => h.status !== 'PENDING')
+                  .slice(-20)
+                  .reverse()
+                  .map((h) => (
+                    <div
+                      key={h.id}
+                      className={`relative pl-6 border-l-2 ${
+                        h.status === 'PARTICIPATED'
+                          ? 'border-emerald-200'
+                          : h.status === 'ABSENT'
+                          ? 'border-rose-200'
+                          : 'border-slate-200'
+                      }`}
+                    >
+                      <div
+                        className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-4 border-white ${
+                          h.status === 'PARTICIPATED'
+                            ? 'bg-emerald-500'
+                            : h.status === 'ABSENT'
+                            ? 'bg-rose-500'
+                            : 'bg-slate-400'
+                        }`}
+                      ></div>
+                      <p className="text-sm font-bold text-slate-800">
+                        {h.group.name}{' '}
+                        {h.status === 'PARTICIPATED' && (
+                          <span className="text-emerald-600 font-black">+1 crédito</span>
+                        )}
+                        {h.status === 'ABSENT' && (
+                          <span className="text-rose-600 font-black">Ausente</span>
+                        )}
+                        {h.status === 'SKIPPED' && (
+                          <span className="text-slate-500 font-black">Omitido</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Ronda {h.roundNumber} • {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+  );
+};
+
+const RaffleResultRow = ({ result, onResolve }) => {
+  const group = result.group;
+
+  return (
+    <div className="bg-white border-2 border-indigo-50 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm hover:border-indigo-100 transition-colors">
+      <div className="flex-1 w-full">
+        <div className="flex items-center gap-3 mb-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+            G-{group.id?.substring(0, 4).toUpperCase()}
+          </span>
+          <h3 className="text-lg font-bold text-slate-800">{group.name}</h3>
+          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md ml-auto lg:ml-0">
+            {group.totalCredits} Cred
+          </span>
+        </div>
+        <p className="text-sm text-slate-500">{group.memberCount} integrantes</p>
+      </div>
+
+      <div className="flex items-center gap-2 w-full lg:w-auto">
+        <button
+          onClick={() => onResolve(result.id, 'PARTICIPATED')}
+          disabled={result.status !== 'PENDING'}
+          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
+        >
+          <span className="text-sm group-hover:scale-110 transition-transform">🟢</span>
+          <span className="text-sm">Sumar</span>
+        </button>
+        <button
+          onClick={() => onResolve(result.id, 'ABSENT')}
+          disabled={result.status !== 'PENDING'}
+          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
+        >
+          <span className="text-sm group-hover:scale-110 transition-transform">🔴</span>
+          <span className="text-sm">Falta</span>
+        </button>
+        <button
+          onClick={() => onResolve(result.id, 'SKIPPED')}
+          disabled={result.status !== 'PENDING'}
+          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
+          title="Omitir sin penalizar"
+        >
+          <span className="text-sm group-hover:scale-110 transition-transform">⚪</span>
+        </button>
+      </div>
     </div>
   );
 };
