@@ -43,3 +43,14 @@ export function useUnenrollStudent() {
     },
   });
 }
+
+export function useUpdateStudent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: studentService.update,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: studentKeys.all });
+    },
+  });
+}

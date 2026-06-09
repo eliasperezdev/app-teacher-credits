@@ -181,18 +181,32 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [undoError, setUndoError] = useState('');
+  const [showRaffleWarning, setShowRaffleWarning] = useState(false);
+  const [pendingRaffleAction, setPendingRaffleAction] = useState(null);
 
   const raffles = rafflesData?.data ?? [];
   const sessionDetail = sessionDetailData?.data;
   const creditEvents = sessionDetail?.creditEvents ?? [];
   const groups = groupsData?.data ?? [];
   const latestRaffle = raffles.length > 0 ? raffles[raffles.length - 1] : null;
-  const pendingResults = latestRaffle?.results?.filter((r) => r.status === 'PENDING') ?? [];
+
+  const allActiveResults = raffles.flatMap((r) =>
+    r.results.filter((res) =>
+      res.status === 'PENDING' ||
+      res.status === 'ABSENT' ||
+      res.status === 'SKIPPED'
+    )
+  );
+
+  const pendingResults = allActiveResults.filter((r) => r.status === 'PENDING');
+  const absentOrSkippedResults = allActiveResults.filter((r) =>
+    r.status === 'ABSENT' || r.status === 'SKIPPED'
+  );
 
   const usedGroupIds = new Set(
     raffles.flatMap((r) =>
       r.results
-        .filter((res) => res.status !== 'PENDING')
+        .filter((res) => res.status !== 'PENDING' && res.status !== 'REPLACED')
         .map((res) => res.group.id)
     )
   );
@@ -200,6 +214,8 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const availableGroups = groups.filter(
     (g) => g.isActive && !usedGroupIds.has(g.id)
   );
+
+  const hasAbsentOrSkipped = absentOrSkippedResults.length > 0;
 
   const availableCount = availableGroups.length;
   const noGroupsAvailable = availableCount === 0;
@@ -225,6 +241,52 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     }
   };
 
+  const handleRerunAbsentOrSkipped = async () => {
+    if (absentOrSkippedResults.length === 0 || !latestRaffle) return;
+    setError('');
+    try {
+      await rerunRaffle.mutateAsync({
+        sessionId: session.id,
+        raffleId: latestRaffle.id,
+        resultIds: absentOrSkippedResults.map((r) => r.id),
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al re-sortear ausentes/omitidos');
+    }
+  };
+
+  const handleDismissAbsentOrSkipped = async () => {
+    if (absentOrSkippedResults.length === 0) return;
+    setError('');
+    try {
+      for (const result of absentOrSkippedResults) {
+        await resolveResult.mutateAsync({ resultId: result.id, status: result.status });
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al descartar grupos');
+    }
+  };
+
+  const handleLaunchRaffleWithCheck = () => {
+    if (pendingResults.length > 0) {
+      setError('Resolvé los grupos pendientes antes de lanzar un nuevo sorteo');
+      return;
+    }
+    if (hasAbsentOrSkipped) {
+      setPendingRaffleAction(() => () => {
+        return createRaffle.mutateAsync({
+          sessionId: session.id,
+          quantity: cappedQuantity,
+        });
+      });
+      setShowRaffleWarning(true);
+    } else if (noGroupsAvailable) {
+      setError('No hay grupos disponibles para sortear');
+    } else {
+      handleLaunchRaffle();
+    }
+  };
+
   const handleLaunchRaffle = async () => {
     setError('');
     try {
@@ -242,16 +304,6 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
       await resolveResult.mutateAsync({ resultId, status });
     } catch (err) {
       setError(err.response?.data?.message || 'Error al resolver');
-    }
-  };
-
-  const handleRerun = async () => {
-    if (!latestRaffle) return;
-    setError('');
-    try {
-      await rerunRaffle.mutateAsync({ sessionId: session.id, raffleId: latestRaffle.id });
-    } catch (err) {
-      setError(err.response?.data?.message || 'Error al re-sortear');
     }
   };
 
@@ -307,11 +359,25 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-medium">
               Comisión {commission.name} • Sesión en curso
+              {hasAbsentOrSkipped && (
+                <span className="ml-2 text-amber-600 font-bold">
+                  • {absentOrSkippedResults.length} grupo{absentOrSkippedResults.length !== 1 ? 's' : ''} para re-sortear
+                </span>
+              )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/commissions"
+            className="text-slate-400 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 p-2.5 rounded-xl transition-colors cursor-pointer"
+            title="Volver a Comisiones"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </Link>
           <button
             onClick={onCloseClass}
             disabled={closingSession}
@@ -379,24 +445,43 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           ) : null}
 
           <button
-            onClick={handleLaunchRaffle}
-            disabled={createRaffle.isPending || noGroupsAvailable}
+            onClick={handleLaunchRaffleWithCheck}
+            disabled={createRaffle.isPending || noGroupsAvailable || pendingResults.length > 0}
             className="mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-2xl py-4 text-lg font-bold w-full shadow-lg shadow-indigo-200 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:cursor-not-allowed"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
             </svg>
-            {createRaffle.isPending ? 'Sorteando...' : noGroupsAvailable ? 'Sin grupos disponibles' : 'Lanzar Sorteo'}
+            {createRaffle.isPending ? 'Sorteando...' : pendingResults.length > 0 ? 'Resolvé pendientes primero' : noGroupsAvailable ? 'Sin grupos disponibles' : 'Lanzar Sorteo'}
           </button>
 
-          {latestRaffle && pendingResults.length === 0 && !noGroupsAvailable && (
-            <button
-              onClick={handleRerun}
-              disabled={rerunRaffle.isPending}
-              className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {rerunRaffle.isPending ? 'Re-sorteando...' : 'Re-sortear pendientes'}
-            </button>
+          {hasAbsentOrSkipped && (
+            availableCount === 0 ? (
+              <div className="flex flex-col gap-2">
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl py-3 px-4 text-center">
+                  <p className="text-sm font-bold text-rose-700">No hay grupos disponibles para reemplazar</p>
+                  <p className="text-xs text-rose-500 mt-1">Los grupos ausentes/omitidos no pueden ser re-sorteados</p>
+                </div>
+                <button
+                  onClick={handleDismissAbsentOrSkipped}
+                  disabled={resolveResult.isPending}
+                  className="bg-slate-50 hover:bg-slate-100 disabled:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Descartar grupos pendientes
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleRerunAbsentOrSkipped}
+                disabled={rerunRaffle.isPending}
+                className="bg-amber-50 hover:bg-amber-100 disabled:bg-slate-100 text-amber-700 border border-amber-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Re-sortear ausentes/omitidos ({absentOrSkippedResults.length})
+              </button>
+            )
           )}
         </aside>
 
@@ -406,21 +491,23 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-800">Grupos Seleccionados</h2>
               <p className="text-slate-500 text-sm mt-1">
-                {latestRaffle
-                  ? `Ronda ${latestRaffle.roundNumber} • ${pendingResults.length} pendiente${pendingResults.length !== 1 ? 's' : ''}`
-                  : 'Sin sorteos aún'}
+                {allActiveResults.length > 0
+                  ? `${pendingResults.length} pendiente${pendingResults.length !== 1 ? 's' : ''}${absentOrSkippedResults.length > 0 ? ` • ${absentOrSkippedResults.length} para re-sortear` : ''}`
+                  : raffles.length > 0
+                    ? 'Todos los grupos resueltos'
+                    : 'Sin sorteos aún'}
               </p>
             </div>
           </div>
 
-          {pendingResults.length === 0 && raffles.length === 0 ? (
+          {allActiveResults.length === 0 && raffles.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm text-center">
               <svg className="w-10 h-10 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="text-slate-400 font-medium">Lanzá un sorteo para comenzar</p>
             </div>
-          ) : pendingResults.length === 0 && latestRaffle ? (
+          ) : allActiveResults.length === 0 && raffles.length > 0 ? (
             <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
               <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -429,23 +516,24 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {pendingResults.map((result) => (
+              {allActiveResults.map((result) => (
                 <RaffleResultRow
                   key={result.id}
                   result={result}
                   onResolve={handleResolve}
+                  onRerun={absentOrSkippedResults.length > 0 ? handleRerunAbsentOrSkipped : undefined}
                 />
               ))}
             </div>
           )}
 
           {/* Previous rounds */}
-          {raffleHistory.length > pendingResults.length && (
+          {raffleHistory.filter((h) => h.status === 'PARTICIPATED' || h.status === 'REPLACED').length > 0 && (
             <div className="mt-4">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Rondas anteriores</h3>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Resueltos</h3>
               <div className="flex flex-col gap-2">
                 {raffleHistory
-                  .filter((h) => h.status !== 'PENDING')
+                  .filter((h) => h.status === 'PARTICIPATED' || h.status === 'REPLACED')
                   .slice(-10)
                   .reverse()
                   .map((h) => (
@@ -461,12 +549,10 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                         className={`text-xs font-bold px-2 py-1 rounded-md ${
                           h.status === 'PARTICIPATED'
                             ? 'bg-emerald-100 text-emerald-700'
-                            : h.status === 'ABSENT'
-                            ? 'bg-rose-100 text-rose-700'
                             : 'bg-slate-100 text-slate-500'
                         }`}
                       >
-                        {h.status === 'PARTICIPATED' ? 'Participo' : h.status === 'ABSENT' ? 'Ausente' : 'Omitido'}
+                        {h.status === 'PARTICIPATED' ? 'Participo' : 'Reemplazado'}
                       </span>
                     </div>
                   ))}
@@ -585,54 +671,152 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           </div>
         </aside>
       </main>
+
+      {showRaffleWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-black text-slate-800 text-center mb-2">Hay grupos sin resolver</h2>
+            <p className="text-sm text-slate-500 text-center mb-4">
+              {absentOrSkippedResults.length} grupo{absentOrSkippedResults.length !== 1 ? 's' : ''} 
+              {absentOrSkippedResults.length !== 1 ? ' faltaron o fueron omitidos' : ' faltó o fue omitido'} en el sorteo actual.
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6">
+              <p className="text-sm font-medium text-amber-800 text-center">
+                <span className="font-bold">Grupos:</span>{' '}
+                {absentOrSkippedResults.map((r) => r.group.name).join(', ')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowRaffleWarning(false);
+                  setPendingRaffleAction(null);
+                  handleRerunAbsentOrSkipped();
+                }}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Re-sortear estos grupos
+              </button>
+              <button
+                onClick={async () => {
+                  setShowRaffleWarning(false);
+                  try {
+                    for (const result of absentOrSkippedResults) {
+                      await resolveResult.mutateAsync({ resultId: result.id, status: result.status });
+                    }
+                    if (pendingRaffleAction) {
+                      await pendingRaffleAction();
+                    }
+                  } catch (err) {
+                    setError(err.response?.data?.message || 'Error al procesar');
+                  }
+                  setPendingRaffleAction(null);
+                }}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Descartar pendientes y hacer sorteo nuevo
+              </button>
+              <button
+                onClick={() => {
+                  setShowRaffleWarning(false);
+                  setPendingRaffleAction(null);
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const RaffleResultRow = ({ result, onResolve }) => {
+const RaffleResultRow = ({ result, onResolve, onRerun }) => {
   const group = result.group;
+  const isAbsent = result.status === 'ABSENT';
+  const isSkipped = result.status === 'SKIPPED';
+  const isResolved = isAbsent || isSkipped;
 
   return (
-    <div className="bg-white border-2 border-indigo-50 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm hover:border-indigo-100 transition-colors">
+    <div className={`bg-white border-2 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm transition-colors ${
+      isAbsent ? 'border-rose-200 bg-rose-50/30' :
+      isSkipped ? 'border-slate-200 bg-slate-50/30' :
+      'border-indigo-50 hover:border-indigo-100'
+    }`}>
       <div className="flex-1 w-full">
         <div className="flex items-center gap-3 mb-1.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+          <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+            isAbsent ? 'bg-rose-100 text-rose-700' :
+            isSkipped ? 'bg-slate-100 text-slate-500' :
+            'bg-indigo-100 text-indigo-700'
+          }`}>
             G-{group.id?.substring(0, 4).toUpperCase()}
           </span>
           <h3 className="text-lg font-bold text-slate-800">{group.name}</h3>
           <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md ml-auto lg:ml-0">
             {group.totalCredits} Cred
           </span>
+          {isResolved && (
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+              isAbsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {isAbsent ? 'Ausente' : 'Omitido'}
+            </span>
+          )}
         </div>
         <p className="text-sm text-slate-500">{group.memberCount} integrantes</p>
       </div>
 
-      <div className="flex items-center gap-2 w-full lg:w-auto">
-        <button
-          onClick={() => onResolve(result.id, 'PARTICIPATED')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">+</span>
-          <span className="text-sm">Sumar</span>
-        </button>
-        <button
-          onClick={() => onResolve(result.id, 'ABSENT')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">-</span>
-          <span className="text-sm">Falta</span>
-        </button>
-        <button
-          onClick={() => onResolve(result.id, 'SKIPPED')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
-          title="Omitir sin penalizar"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">~</span>
-        </button>
-      </div>
+      {isResolved ? (
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <span className="text-sm text-slate-400 italic">Esperando re-sorteo...</span>
+          {onRerun && (
+            <button
+              onClick={onRerun}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="text-sm">Re-sortear</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <button
+            onClick={() => onResolve(result.id, 'PARTICIPATED')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">+</span>
+            <span className="text-sm">Sumar</span>
+          </button>
+          <button
+            onClick={() => onResolve(result.id, 'ABSENT')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">-</span>
+            <span className="text-sm">Falta</span>
+          </button>
+          <button
+            onClick={() => onResolve(result.id, 'SKIPPED')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
+            title="Omitir sin penalizar"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">~</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -16,8 +16,8 @@ export const raffleService = {
     return response.data;
   },
 
-  rerun: async ({ sessionId, raffleId }) => {
-    const response = await axiosInstance.post(`/sessions/${sessionId}/raffles/${raffleId}/rerun`);
+  rerun: async ({ sessionId, raffleId, resultIds }) => {
+    const response = await axiosInstance.post(`/sessions/${sessionId}/raffles/${raffleId}/rerun`, { resultIds });
     return response.data;
   },
 };

@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
-import { useStudents, useImportStudents } from '../hooks/useStudents';
+import { useStudents, useImportStudents, useUpdateStudent } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
 import Header from '../components/Header';
+import EditStudentModal from '../components/EditStudentModal';
 
 const TABS = [
   { id: 'config', label: 'Configuracion' },
@@ -308,6 +309,7 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
   const [canjearModal, setCanjearModal] = useState(null);
   const [canjearError, setCanjearError] = useState('');
   const [canjearSuccess, setCanjearSuccess] = useState('');
+  const [editModal, setEditModal] = useState(null);
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
@@ -485,6 +487,15 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                   </div>
                   <div className="col-span-1 md:col-span-3 flex justify-end md:justify-center gap-2">
                     <button
+                      onClick={() => setEditModal(s)}
+                      className="bg-indigo-100 hover:bg-indigo-400 text-indigo-700 hover:text-indigo-900 font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Modificar datos"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg> Editar
+                    </button>
+                    <button
                       onClick={() => canCanjear && setCanjearModal({ student: s, credits: totalCredits, points: pointsValue })}
                       disabled={!canCanjear}
                       className={`font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
@@ -549,6 +560,10 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {editModal && (
+        <EditStudentModal student={editModal} onClose={() => setEditModal(null)} />
       )}
     </div>
   );

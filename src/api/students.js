@@ -35,4 +35,9 @@ export const studentService = {
     );
     return response.data;
   },
+
+  update: async ({ studentId, ...payload }) => {
+    const response = await axiosInstance.patch(`/students/${studentId}`, payload);
+    return response.data;
+  },
 };
