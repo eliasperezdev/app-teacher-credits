@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCommission } from '../hooks/useCommissions';
 import { useSessions, useCreateSession, useCloseSession } from '../hooks/useSessions';
 import { useSession } from '../hooks/useSessions';
-import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle } from '../hooks/useRaffles';
+import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle, useCorrectRaffleResult } from '../hooks/useRaffles';
 import { useGroups } from '../hooks/useGroups';
 import { useReverseCredit } from '../hooks/useCredits';
 import Header from '../components/Header';
@@ -177,12 +177,14 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const resolveResult = useResolveRaffleResult();
   const rerunRaffle = useRerunRaffle();
   const reverseCredit = useReverseCredit();
+  const correctResult = useCorrectRaffleResult();
 
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [undoError, setUndoError] = useState('');
   const [showRaffleWarning, setShowRaffleWarning] = useState(false);
   const [pendingRaffleAction, setPendingRaffleAction] = useState(null);
+  const [correctModal, setCorrectModal] = useState(null);
 
   const raffles = rafflesData?.data ?? [];
   const sessionDetail = sessionDetailData?.data;
@@ -307,31 +309,35 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     }
   };
 
+  const handleCorrect = async (resultId, newStatus) => {
+    try {
+      await correctResult.mutateAsync({ resultId, newStatus });
+      setCorrectModal(null);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al corregir');
+    }
+  };
+
   const raffleHistory = raffles.flatMap((r) =>
     r.results.map((res) => ({
       ...res,
       type: 'raffle',
       raffleId: r.id,
       roundNumber: r.roundNumber,
-      createdAt: r.createdAt,
+      createdAt: res.resolvedAt || r.createdAt,
     }))
   );
 
   const creditHistory = creditEvents
     .filter((e) => !e.raffleResult)
-    .filter((e, i, arr) => {
-      if (e.raffleResult?.id) {
-        return arr.findIndex((x) => x.raffleResult?.id === e.raffleResult?.id) === i;
-      }
-      return arr.findIndex((x) => x.id === e.id) === i;
-    })
+    .filter((e, i, arr) => arr.findIndex((x) => x.id === e.id) === i)
     .map((e) => ({
       ...e,
       type: 'credit',
     }));
 
   const reversedIds = new Set(
-    creditEvents.filter((e) => e.isReversal || e.amount < 0).map((e) => e.reversedById).filter(Boolean)
+    creditEvents.filter((e) => e.isReversal).map((e) => e.reversedById).filter(Boolean)
   );
 
   const lastCreditEvent = creditEvents
@@ -339,10 +345,10 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null;
 
   const allHistory = [...raffleHistory, ...creditHistory]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort((a, b) => new Date(b.createdAt || b.resolvedAt) - new Date(a.createdAt || a.resolvedAt));
 
-  const participatedCount = allHistory.filter((h) => h.status === 'PARTICIPATED' || (h.type === 'credit' && h.amount > 0 && !h.isReversal)).length;
-  const absentCount = allHistory.filter((h) => h.status === 'ABSENT').length;
+  const participatedCount = raffleHistory.filter((h) => h.status === 'PARTICIPATED').length;
+  const absentCount = raffleHistory.filter((h) => h.status === 'ABSENT').length;
 
   return (
     <div className="bg-zinc-50 text-slate-800 min-h-screen flex flex-col">
@@ -528,32 +534,51 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           )}
 
           {/* Previous rounds */}
-          {raffleHistory.filter((h) => h.status === 'PARTICIPATED' || h.status === 'REPLACED').length > 0 && (
+          {raffleHistory.filter((h) => h.status === 'PARTICIPATED' || h.status === 'ABSENT' || h.status === 'SKIPPED' || h.status === 'REPLACED').length > 0 && (
             <div className="mt-4">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Resueltos</h3>
               <div className="flex flex-col gap-2">
                 {raffleHistory
-                  .filter((h) => h.status === 'PARTICIPATED' || h.status === 'REPLACED')
+                  .filter((h) => h.status === 'PARTICIPATED' || h.status === 'ABSENT' || h.status === 'SKIPPED' || h.status === 'REPLACED')
                   .slice(-10)
                   .reverse()
                   .map((h) => (
                     <div
-                      key={h.id}
-                      className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between text-sm"
+                      key={`resolved-${h.id}`}
+                      className={`bg-white border rounded-xl p-3 flex items-center justify-between text-sm group ${
+                        h.status === 'REPLACED' ? 'border-slate-100 opacity-60' : 'border-slate-100'
+                      }`}
                     >
                       <div>
                         <span className="font-bold text-slate-700">{h.group.name}</span>
                         <span className="text-slate-400 text-xs ml-2">Ronda {h.roundNumber}</span>
                       </div>
-                      <span
-                        className={`text-xs font-bold px-2 py-1 rounded-md ${
-                          h.status === 'PARTICIPATED'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {h.status === 'PARTICIPATED' ? 'Participo' : 'Reemplazado'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold px-2 py-1 rounded-md ${
+                            h.status === 'PARTICIPATED'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : h.status === 'ABSENT'
+                              ? 'bg-rose-100 text-rose-700'
+                              : h.status === 'SKIPPED'
+                              ? 'bg-slate-100 text-slate-500'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {h.status === 'PARTICIPATED' ? 'Participo' : h.status === 'ABSENT' ? 'Ausente' : h.status === 'SKIPPED' ? 'Omitido' : 'Re-sort'}
+                        </span>
+                        {h.status !== 'REPLACED' && (
+                          <button
+                            onClick={() => setCorrectModal(h)}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition-all p-1 cursor-pointer"
+                            title="Corregir"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -611,15 +636,16 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                   const isParticipated = h.status === 'PARTICIPATED';
                   const isAbsent = h.status === 'ABSENT';
                   const isSkipped = h.status === 'SKIPPED';
+                  const isReplaced = h.status === 'REPLACED';
                   const isCredit = h.type === 'credit';
-                  const isReversal = h.isReversal || (h.amount < 0);
+                  const isReversal = h.isReversal === true;
                   const wasReversed = reversedIds.has(h.id);
 
                   if (wasReversed) return null;
 
                   return (
                     <div
-                      key={h.id}
+                      key={`${h.type}-${h.id}`}
                       className={`relative pl-6 border-l-2 ${
                         isReversal
                           ? 'border-amber-200'
@@ -628,7 +654,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                           : isParticipated || isCredit
                           ? 'border-emerald-200'
                           : 'border-slate-200'
-                      }`}
+                      } ${isReplaced ? 'opacity-50' : ''}`}
                     >
                       <div
                         className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-4 border-white ${
@@ -655,13 +681,16 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                         {isSkipped && (
                           <span className="text-slate-500 font-black">Omitido</span>
                         )}
+                        {isReplaced && (
+                          <span className="text-slate-400 font-black">Re-sort</span>
+                        )}
                         {isCredit && !isReversal && (
                           <span className="text-emerald-600 font-black">+{h.amount} crédito</span>
                         )}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {isRaffle && `Ronda ${h.roundNumber} • `}
-                        {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(h.resolvedAt || h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   );
@@ -731,6 +760,74 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                 Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {correctModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-2xl font-black text-slate-800 mb-2">Corregir Estado</h3>
+            <p className="text-sm text-slate-500 mb-1">
+              Grupo: <span className="font-bold">{correctModal.group.name}</span>
+            </p>
+            <p className="text-sm text-slate-500 mb-6">
+              Estado actual: <span className={`font-bold ${
+                correctModal.status === 'PARTICIPATED' ? 'text-emerald-600' :
+                correctModal.status === 'ABSENT' ? 'text-rose-600' :
+                'text-slate-500'
+              }`}>
+                {correctModal.status === 'PARTICIPATED' ? 'Participó' :
+                 correctModal.status === 'ABSENT' ? 'Ausente' :
+                 correctModal.status === 'SKIPPED' ? 'Omitido' : 'Reemplazado'}
+              </span>
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <p className="text-sm font-bold text-amber-700">
+                Esta acción ajustará los créditos automáticamente y quedará registrada en el historial.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {correctModal.status !== 'PARTICIPATED' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'PARTICIPATED')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Participó</span>
+                  <span className="text-xs font-medium text-emerald-600">+1 crédito</span>
+                </button>
+              )}
+              {correctModal.status !== 'ABSENT' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'ABSENT')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Ausente</span>
+                  <span className="text-xs font-medium text-rose-600">-1 crédito</span>
+                </button>
+              )}
+              {correctModal.status !== 'SKIPPED' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'SKIPPED')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Omitido</span>
+                  <span className="text-xs font-medium text-slate-500">Sin cambio</span>
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setCorrectModal(null)}
+              className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}

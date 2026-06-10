@@ -7,6 +7,7 @@ import CommissionDashboard from './pages/CommissionDashboard';
 import CommissionDetail from './pages/CommissionDetail';
 import CommissionManagement from './pages/CommissionManagement';
 import CommissionHistory from './pages/CommissionHistory';
+import PublicRanking from './pages/PublicRanking';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,6 +39,7 @@ function App() {
             <Route path="/commission/:id/class" element={<ProtectedRoute><CommissionDetail /></ProtectedRoute>} />
             <Route path="/commission/:id" element={<ProtectedRoute><CommissionManagement /></ProtectedRoute>} />
             <Route path="/commission/:id/history" element={<ProtectedRoute><CommissionHistory /></ProtectedRoute>} />
+            <Route path="/public/:slug" element={<PublicRanking />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AuthProvider>

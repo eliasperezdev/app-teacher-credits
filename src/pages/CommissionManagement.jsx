@@ -5,6 +5,7 @@ import { useStudents, useImportStudents, useUpdateStudent } from '../hooks/useSt
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
+import { useGeneratePublicLink, useRevokePublicLink } from '../hooks/usePublic';
 import Header from '../components/Header';
 import EditStudentModal from '../components/EditStudentModal';
 
@@ -135,9 +136,13 @@ const ConfigTab = ({ commission }) => {
   const [autoCompleteGroups, setAutoCompleteGroups] = useState(commission.autoCompleteGroups);
   const [error, setError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [publicLink, setPublicLink] = useState(commission.publicUrl || null);
+  const [copied, setCopied] = useState(false);
 
   const updateCommission = useUpdateCommission();
   const deleteCommission = useDeleteCommission();
+  const generateLink = useGeneratePublicLink();
+  const revokeLink = useRevokePublicLink();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -268,6 +273,75 @@ const ConfigTab = ({ commission }) => {
             {updateCommission.isPending ? 'Guardando...' : 'Guardar Cambios'}
           </button>
         </form>
+      </section>
+
+      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-indigo-100">
+        <h2 className="text-xl font-black text-indigo-600 mb-2">Link Público de Ranking</h2>
+        <p className="text-sm text-slate-500 mb-4">Comparte este enlace para que cualquiera pueda ver el ranking de grupos. Solo quien tenga el link podrá acceder.</p>
+
+        {!publicLink ? (
+          <button
+            onClick={async () => {
+              try {
+                const res = await generateLink.mutateAsync(commission.id);
+                setPublicLink(res.publicUrl || res.data?.publicUrl);
+              } catch (err) {
+                setError(err.response?.data?.message || 'Error al generar el link');
+              }
+            }}
+            disabled={generateLink.isPending}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-2.5 px-5 rounded-xl transition-colors cursor-pointer"
+          >
+            {generateLink.isPending ? 'Generando...' : 'Generar Link Público'}
+          </button>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span className="text-sm font-mono text-slate-700 truncate">{publicLink}</span>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(publicLink);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold py-2.5 px-4 rounded-xl transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+            >
+              {copied ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copiado
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copiar
+                </>
+              )}
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  await revokeLink.mutateAsync(commission.id);
+                  setPublicLink(null);
+                } catch (err) {
+                  setError(err.response?.data?.message || 'Error al revocar el link');
+                }
+              }}
+              disabled={revokeLink.isPending}
+              className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold py-2.5 px-4 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {revokeLink.isPending ? 'Revocando...' : 'Revocar'}
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-rose-100">

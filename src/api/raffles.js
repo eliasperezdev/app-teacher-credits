@@ -20,4 +20,9 @@ export const raffleService = {
     const response = await axiosInstance.post(`/sessions/${sessionId}/raffles/${raffleId}/rerun`, { resultIds });
     return response.data;
   },
+
+  correctResult: async ({ resultId, newStatus }) => {
+    const response = await axiosInstance.patch(`/raffle-results/${resultId}/correct`, { newStatus });
+    return response.data;
+  },
 };
