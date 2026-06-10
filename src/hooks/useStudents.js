@@ -7,6 +7,8 @@ export function useStudents(commissionId) {
     queryKey: studentKeys.lists(commissionId),
     queryFn: () => studentService.getAll(commissionId),
     enabled: !!commissionId,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -40,6 +42,17 @@ export function useUnenrollStudent() {
     mutationFn: studentService.unenroll,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: studentKeys.lists(variables.commissionId) });
+    },
+  });
+}
+
+export function useUpdateStudent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: studentService.update,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: studentKeys.all });
     },
   });
 }

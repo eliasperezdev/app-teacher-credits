@@ -1,12 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { authService } from '../api/auth';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['currentUser'],
@@ -33,11 +35,11 @@ export const AuthProvider = ({ children }) => {
     mutationFn: authService.logout,
     onSuccess: () => {
       queryClient.clear();
-      window.location.href = '/login';
+      navigate('/login', { replace: true });
     },
     onError: () => {
       queryClient.clear();
-      window.location.href = '/login';
+      navigate('/login', { replace: true });
     },
   });
 

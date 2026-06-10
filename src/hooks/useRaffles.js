@@ -48,3 +48,16 @@ export function useRerunRaffle() {
     },
   });
 }
+
+export function useCorrectRaffleResult() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: raffleService.correctResult,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: raffleKeys.all });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+    },
+  });
+}

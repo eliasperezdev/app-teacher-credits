@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCommission } from '../hooks/useCommissions';
 import { useSessions, useCreateSession, useCloseSession } from '../hooks/useSessions';
 import { useSession } from '../hooks/useSessions';
-import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle } from '../hooks/useRaffles';
+import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle, useCorrectRaffleResult } from '../hooks/useRaffles';
 import { useGroups } from '../hooks/useGroups';
 import { useReverseCredit } from '../hooks/useCredits';
 import Header from '../components/Header';
@@ -177,22 +177,38 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const resolveResult = useResolveRaffleResult();
   const rerunRaffle = useRerunRaffle();
   const reverseCredit = useReverseCredit();
+  const correctResult = useCorrectRaffleResult();
 
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [undoError, setUndoError] = useState('');
+  const [showRaffleWarning, setShowRaffleWarning] = useState(false);
+  const [pendingRaffleAction, setPendingRaffleAction] = useState(null);
+  const [correctModal, setCorrectModal] = useState(null);
 
   const raffles = rafflesData?.data ?? [];
   const sessionDetail = sessionDetailData?.data;
   const creditEvents = sessionDetail?.creditEvents ?? [];
   const groups = groupsData?.data ?? [];
   const latestRaffle = raffles.length > 0 ? raffles[raffles.length - 1] : null;
-  const pendingResults = latestRaffle?.results?.filter((r) => r.status === 'PENDING') ?? [];
+
+  const allActiveResults = raffles.flatMap((r) =>
+    r.results.filter((res) =>
+      res.status === 'PENDING' ||
+      res.status === 'ABSENT' ||
+      res.status === 'SKIPPED'
+    )
+  );
+
+  const pendingResults = allActiveResults.filter((r) => r.status === 'PENDING');
+  const absentOrSkippedResults = allActiveResults.filter((r) =>
+    r.status === 'ABSENT' || r.status === 'SKIPPED'
+  );
 
   const usedGroupIds = new Set(
     raffles.flatMap((r) =>
       r.results
-        .filter((res) => res.status !== 'PENDING')
+        .filter((res) => res.status !== 'PENDING' && res.status !== 'REPLACED')
         .map((res) => res.group.id)
     )
   );
@@ -200,6 +216,8 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const availableGroups = groups.filter(
     (g) => g.isActive && !usedGroupIds.has(g.id)
   );
+
+  const hasAbsentOrSkipped = absentOrSkippedResults.length > 0;
 
   const availableCount = availableGroups.length;
   const noGroupsAvailable = availableCount === 0;
@@ -225,6 +243,52 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     }
   };
 
+  const handleRerunAbsentOrSkipped = async () => {
+    if (absentOrSkippedResults.length === 0 || !latestRaffle) return;
+    setError('');
+    try {
+      await rerunRaffle.mutateAsync({
+        sessionId: session.id,
+        raffleId: latestRaffle.id,
+        resultIds: absentOrSkippedResults.map((r) => r.id),
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al re-sortear ausentes/omitidos');
+    }
+  };
+
+  const handleDismissAbsentOrSkipped = async () => {
+    if (absentOrSkippedResults.length === 0) return;
+    setError('');
+    try {
+      for (const result of absentOrSkippedResults) {
+        await resolveResult.mutateAsync({ resultId: result.id, status: result.status });
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al descartar grupos');
+    }
+  };
+
+  const handleLaunchRaffleWithCheck = () => {
+    if (pendingResults.length > 0) {
+      setError('Resolvé los grupos pendientes antes de lanzar un nuevo sorteo');
+      return;
+    }
+    if (hasAbsentOrSkipped) {
+      setPendingRaffleAction(() => () => {
+        return createRaffle.mutateAsync({
+          sessionId: session.id,
+          quantity: cappedQuantity,
+        });
+      });
+      setShowRaffleWarning(true);
+    } else if (noGroupsAvailable) {
+      setError('No hay grupos disponibles para sortear');
+    } else {
+      handleLaunchRaffle();
+    }
+  };
+
   const handleLaunchRaffle = async () => {
     setError('');
     try {
@@ -245,13 +309,12 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     }
   };
 
-  const handleRerun = async () => {
-    if (!latestRaffle) return;
-    setError('');
+  const handleCorrect = async (resultId, newStatus) => {
     try {
-      await rerunRaffle.mutateAsync({ sessionId: session.id, raffleId: latestRaffle.id });
+      await correctResult.mutateAsync({ resultId, newStatus });
+      setCorrectModal(null);
     } catch (err) {
-      setError(err.response?.data?.message || 'Error al re-sortear');
+      setError(err.response?.data?.message || 'Error al corregir');
     }
   };
 
@@ -261,25 +324,20 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
       type: 'raffle',
       raffleId: r.id,
       roundNumber: r.roundNumber,
-      createdAt: r.createdAt,
+      createdAt: res.resolvedAt || r.createdAt,
     }))
   );
 
   const creditHistory = creditEvents
     .filter((e) => !e.raffleResult)
-    .filter((e, i, arr) => {
-      if (e.raffleResult?.id) {
-        return arr.findIndex((x) => x.raffleResult?.id === e.raffleResult?.id) === i;
-      }
-      return arr.findIndex((x) => x.id === e.id) === i;
-    })
+    .filter((e, i, arr) => arr.findIndex((x) => x.id === e.id) === i)
     .map((e) => ({
       ...e,
       type: 'credit',
     }));
 
   const reversedIds = new Set(
-    creditEvents.filter((e) => e.isReversal || e.amount < 0).map((e) => e.reversedById).filter(Boolean)
+    creditEvents.filter((e) => e.isReversal).map((e) => e.reversedById).filter(Boolean)
   );
 
   const lastCreditEvent = creditEvents
@@ -287,10 +345,10 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] ?? null;
 
   const allHistory = [...raffleHistory, ...creditHistory]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort((a, b) => new Date(b.createdAt || b.resolvedAt) - new Date(a.createdAt || a.resolvedAt));
 
-  const participatedCount = allHistory.filter((h) => h.status === 'PARTICIPATED' || (h.type === 'credit' && h.amount > 0 && !h.isReversal)).length;
-  const absentCount = allHistory.filter((h) => h.status === 'ABSENT').length;
+  const participatedCount = raffleHistory.filter((h) => h.status === 'PARTICIPATED').length;
+  const absentCount = raffleHistory.filter((h) => h.status === 'ABSENT').length;
 
   return (
     <div className="bg-zinc-50 text-slate-800 min-h-screen flex flex-col">
@@ -307,11 +365,25 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-medium">
               Comisión {commission.name} • Sesión en curso
+              {hasAbsentOrSkipped && (
+                <span className="ml-2 text-amber-600 font-bold">
+                  • {absentOrSkippedResults.length} grupo{absentOrSkippedResults.length !== 1 ? 's' : ''} para re-sortear
+                </span>
+              )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/commissions"
+            className="text-slate-400 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 p-2.5 rounded-xl transition-colors cursor-pointer"
+            title="Volver a Comisiones"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </Link>
           <button
             onClick={onCloseClass}
             disabled={closingSession}
@@ -379,24 +451,43 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           ) : null}
 
           <button
-            onClick={handleLaunchRaffle}
-            disabled={createRaffle.isPending || noGroupsAvailable}
+            onClick={handleLaunchRaffleWithCheck}
+            disabled={createRaffle.isPending || noGroupsAvailable || pendingResults.length > 0}
             className="mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-2xl py-4 text-lg font-bold w-full shadow-lg shadow-indigo-200 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:cursor-not-allowed"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
             </svg>
-            {createRaffle.isPending ? 'Sorteando...' : noGroupsAvailable ? 'Sin grupos disponibles' : 'Lanzar Sorteo'}
+            {createRaffle.isPending ? 'Sorteando...' : pendingResults.length > 0 ? 'Resolvé pendientes primero' : noGroupsAvailable ? 'Sin grupos disponibles' : 'Lanzar Sorteo'}
           </button>
 
-          {latestRaffle && pendingResults.length === 0 && !noGroupsAvailable && (
-            <button
-              onClick={handleRerun}
-              disabled={rerunRaffle.isPending}
-              className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {rerunRaffle.isPending ? 'Re-sorteando...' : 'Re-sortear pendientes'}
-            </button>
+          {hasAbsentOrSkipped && (
+            availableCount === 0 ? (
+              <div className="flex flex-col gap-2">
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl py-3 px-4 text-center">
+                  <p className="text-sm font-bold text-rose-700">No hay grupos disponibles para reemplazar</p>
+                  <p className="text-xs text-rose-500 mt-1">Los grupos ausentes/omitidos no pueden ser re-sorteados</p>
+                </div>
+                <button
+                  onClick={handleDismissAbsentOrSkipped}
+                  disabled={resolveResult.isPending}
+                  className="bg-slate-50 hover:bg-slate-100 disabled:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Descartar grupos pendientes
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleRerunAbsentOrSkipped}
+                disabled={rerunRaffle.isPending}
+                className="bg-amber-50 hover:bg-amber-100 disabled:bg-slate-100 text-amber-700 border border-amber-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Re-sortear ausentes/omitidos ({absentOrSkippedResults.length})
+              </button>
+            )
           )}
         </aside>
 
@@ -406,21 +497,23 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-800">Grupos Seleccionados</h2>
               <p className="text-slate-500 text-sm mt-1">
-                {latestRaffle
-                  ? `Ronda ${latestRaffle.roundNumber} • ${pendingResults.length} pendiente${pendingResults.length !== 1 ? 's' : ''}`
-                  : 'Sin sorteos aún'}
+                {allActiveResults.length > 0
+                  ? `${pendingResults.length} pendiente${pendingResults.length !== 1 ? 's' : ''}${absentOrSkippedResults.length > 0 ? ` • ${absentOrSkippedResults.length} para re-sortear` : ''}`
+                  : raffles.length > 0
+                    ? 'Todos los grupos resueltos'
+                    : 'Sin sorteos aún'}
               </p>
             </div>
           </div>
 
-          {pendingResults.length === 0 && raffles.length === 0 ? (
+          {allActiveResults.length === 0 && raffles.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm text-center">
               <svg className="w-10 h-10 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="text-slate-400 font-medium">Lanzá un sorteo para comenzar</p>
             </div>
-          ) : pendingResults.length === 0 && latestRaffle ? (
+          ) : allActiveResults.length === 0 && raffles.length > 0 ? (
             <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center">
               <svg className="w-8 h-8 text-emerald-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -429,45 +522,64 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {pendingResults.map((result) => (
+              {allActiveResults.map((result) => (
                 <RaffleResultRow
                   key={result.id}
                   result={result}
                   onResolve={handleResolve}
+                  onRerun={absentOrSkippedResults.length > 0 ? handleRerunAbsentOrSkipped : undefined}
+                  noGroupsAvailable={noGroupsAvailable}
                 />
               ))}
             </div>
           )}
 
           {/* Previous rounds */}
-          {raffleHistory.length > pendingResults.length && (
+          {raffleHistory.filter((h) => h.status === 'PARTICIPATED' || h.status === 'ABSENT' || h.status === 'SKIPPED' || h.status === 'REPLACED').length > 0 && (
             <div className="mt-4">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Rondas anteriores</h3>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">Resueltos</h3>
               <div className="flex flex-col gap-2">
                 {raffleHistory
-                  .filter((h) => h.status !== 'PENDING')
+                  .filter((h) => h.status === 'PARTICIPATED' || h.status === 'ABSENT' || h.status === 'SKIPPED' || h.status === 'REPLACED')
                   .slice(-10)
                   .reverse()
                   .map((h) => (
                     <div
-                      key={h.id}
-                      className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between text-sm"
+                      key={`resolved-${h.id}`}
+                      className={`bg-white border rounded-xl p-3 flex items-center justify-between text-sm group ${
+                        h.status === 'REPLACED' ? 'border-slate-100 opacity-60' : 'border-slate-100'
+                      }`}
                     >
                       <div>
                         <span className="font-bold text-slate-700">{h.group.name}</span>
                         <span className="text-slate-400 text-xs ml-2">Ronda {h.roundNumber}</span>
                       </div>
-                      <span
-                        className={`text-xs font-bold px-2 py-1 rounded-md ${
-                          h.status === 'PARTICIPATED'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : h.status === 'ABSENT'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {h.status === 'PARTICIPATED' ? 'Participo' : h.status === 'ABSENT' ? 'Ausente' : 'Omitido'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold px-2 py-1 rounded-md ${
+                            h.status === 'PARTICIPATED'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : h.status === 'ABSENT'
+                              ? 'bg-rose-100 text-rose-700'
+                              : h.status === 'SKIPPED'
+                              ? 'bg-slate-100 text-slate-500'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {h.status === 'PARTICIPATED' ? 'Participo' : h.status === 'ABSENT' ? 'Ausente' : h.status === 'SKIPPED' ? 'Omitido' : 'Re-sort'}
+                        </span>
+                        {h.status !== 'REPLACED' && (
+                          <button
+                            onClick={() => setCorrectModal(h)}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition-all p-1 cursor-pointer"
+                            title="Corregir"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -525,15 +637,16 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                   const isParticipated = h.status === 'PARTICIPATED';
                   const isAbsent = h.status === 'ABSENT';
                   const isSkipped = h.status === 'SKIPPED';
+                  const isReplaced = h.status === 'REPLACED';
                   const isCredit = h.type === 'credit';
-                  const isReversal = h.isReversal || (h.amount < 0);
+                  const isReversal = h.isReversal === true;
                   const wasReversed = reversedIds.has(h.id);
 
                   if (wasReversed) return null;
 
                   return (
                     <div
-                      key={h.id}
+                      key={`${h.type}-${h.id}`}
                       className={`relative pl-6 border-l-2 ${
                         isReversal
                           ? 'border-amber-200'
@@ -542,7 +655,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                           : isParticipated || isCredit
                           ? 'border-emerald-200'
                           : 'border-slate-200'
-                      }`}
+                      } ${isReplaced ? 'opacity-50' : ''}`}
                     >
                       <div
                         className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-4 border-white ${
@@ -569,13 +682,16 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                         {isSkipped && (
                           <span className="text-slate-500 font-black">Omitido</span>
                         )}
+                        {isReplaced && (
+                          <span className="text-slate-400 font-black">Re-sort</span>
+                        )}
                         {isCredit && !isReversal && (
                           <span className="text-emerald-600 font-black">+{h.amount} crédito</span>
                         )}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {isRaffle && `Ronda ${h.roundNumber} • `}
-                        {new Date(h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(h.resolvedAt || h.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   );
@@ -585,54 +701,223 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
           </div>
         </aside>
       </main>
+
+      {showRaffleWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-black text-slate-800 text-center mb-2">Hay grupos sin resolver</h2>
+            <p className="text-sm text-slate-500 text-center mb-4">
+              {absentOrSkippedResults.length} grupo{absentOrSkippedResults.length !== 1 ? 's' : ''} 
+              {absentOrSkippedResults.length !== 1 ? ' faltaron o fueron omitidos' : ' faltó o fue omitido'} en el sorteo actual.
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6">
+              <p className="text-sm font-medium text-amber-800 text-center">
+                <span className="font-bold">Grupos:</span>{' '}
+                {absentOrSkippedResults.map((r) => r.group.name).join(', ')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowRaffleWarning(false);
+                  setPendingRaffleAction(null);
+                  handleRerunAbsentOrSkipped();
+                }}
+                disabled={noGroupsAvailable}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500"
+              >
+                {noGroupsAvailable ? 'Sin grupos disponibles' : 'Re-sortear estos grupos'}
+              </button>
+              <button
+                onClick={async () => {
+                  setShowRaffleWarning(false);
+                  try {
+                    for (const result of absentOrSkippedResults) {
+                      await resolveResult.mutateAsync({ resultId: result.id, status: result.status });
+                    }
+                    if (pendingRaffleAction) {
+                      await pendingRaffleAction();
+                    }
+                  } catch (err) {
+                    setError(err.response?.data?.message || 'Error al procesar');
+                  }
+                  setPendingRaffleAction(null);
+                }}
+                disabled={noGroupsAvailable}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
+              >
+                {noGroupsAvailable ? 'Sin grupos disponibles' : 'Descartar pendientes y hacer sorteo nuevo'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowRaffleWarning(false);
+                  setPendingRaffleAction(null);
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {correctModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-2xl font-black text-slate-800 mb-2">Corregir Estado</h3>
+            <p className="text-sm text-slate-500 mb-1">
+              Grupo: <span className="font-bold">{correctModal.group.name}</span>
+            </p>
+            <p className="text-sm text-slate-500 mb-6">
+              Estado actual: <span className={`font-bold ${
+                correctModal.status === 'PARTICIPATED' ? 'text-emerald-600' :
+                correctModal.status === 'ABSENT' ? 'text-rose-600' :
+                'text-slate-500'
+              }`}>
+                {correctModal.status === 'PARTICIPATED' ? 'Participó' :
+                 correctModal.status === 'ABSENT' ? 'Ausente' :
+                 correctModal.status === 'SKIPPED' ? 'Omitido' : 'Reemplazado'}
+              </span>
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <p className="text-sm font-bold text-amber-700">
+                Esta acción ajustará los créditos automáticamente y quedará registrada en el historial.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {correctModal.status !== 'PARTICIPATED' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'PARTICIPATED')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Participó</span>
+                  <span className="text-xs font-medium text-emerald-600">+1 crédito</span>
+                </button>
+              )}
+              {correctModal.status !== 'ABSENT' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'ABSENT')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Ausente</span>
+                  <span className="text-xs font-medium text-rose-600">-1 crédito</span>
+                </button>
+              )}
+              {correctModal.status !== 'SKIPPED' && (
+                <button
+                  onClick={() => handleCorrect(correctModal.id, 'SKIPPED')}
+                  disabled={correctResult.isPending}
+                  className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span>Marcar como Omitido</span>
+                  <span className="text-xs font-medium text-slate-500">Sin cambio</span>
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setCorrectModal(null)}
+              className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const RaffleResultRow = ({ result, onResolve }) => {
+const RaffleResultRow = ({ result, onResolve, onRerun, noGroupsAvailable }) => {
   const group = result.group;
+  const isAbsent = result.status === 'ABSENT';
+  const isSkipped = result.status === 'SKIPPED';
+  const isResolved = isAbsent || isSkipped;
 
   return (
-    <div className="bg-white border-2 border-indigo-50 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm hover:border-indigo-100 transition-colors">
+    <div className={`bg-white border-2 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm transition-colors ${
+      isAbsent ? 'border-rose-200 bg-rose-50/30' :
+      isSkipped ? 'border-slate-200 bg-slate-50/30' :
+      'border-indigo-50 hover:border-indigo-100'
+    }`}>
       <div className="flex-1 w-full">
         <div className="flex items-center gap-3 mb-1.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+          <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+            isAbsent ? 'bg-rose-100 text-rose-700' :
+            isSkipped ? 'bg-slate-100 text-slate-500' :
+            'bg-indigo-100 text-indigo-700'
+          }`}>
             G-{group.id?.substring(0, 4).toUpperCase()}
           </span>
           <h3 className="text-lg font-bold text-slate-800">{group.name}</h3>
           <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md ml-auto lg:ml-0">
             {group.totalCredits} Cred
           </span>
+          {isResolved && (
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+              isAbsent ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {isAbsent ? 'Ausente' : 'Omitido'}
+            </span>
+          )}
         </div>
         <p className="text-sm text-slate-500">{group.memberCount} integrantes</p>
       </div>
 
-      <div className="flex items-center gap-2 w-full lg:w-auto">
-        <button
-          onClick={() => onResolve(result.id, 'PARTICIPATED')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">+</span>
-          <span className="text-sm">Sumar</span>
-        </button>
-        <button
-          onClick={() => onResolve(result.id, 'ABSENT')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">-</span>
-          <span className="text-sm">Falta</span>
-        </button>
-        <button
-          onClick={() => onResolve(result.id, 'SKIPPED')}
-          disabled={result.status !== 'PENDING'}
-          className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
-          title="Omitir sin penalizar"
-        >
-          <span className="text-sm group-hover:scale-110 transition-transform">~</span>
-        </button>
-      </div>
+      {isResolved ? (
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <span className="text-sm text-slate-400 italic">Esperando re-sorteo...</span>
+          {onRerun && (
+            <button
+              onClick={onRerun}
+              disabled={noGroupsAvailable}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-50 disabled:hover:text-amber-600 disabled:hover:border-amber-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="text-sm">{noGroupsAvailable ? 'Sin grupos' : 'Re-sortear'}</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <button
+            onClick={() => onResolve(result.id, 'PARTICIPATED')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white border border-emerald-200 hover:border-emerald-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50 disabled:hover:text-emerald-600 disabled:hover:border-emerald-200"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">+</span>
+            <span className="text-sm">Sumar</span>
+          </button>
+          <button
+            onClick={() => onResolve(result.id, 'ABSENT')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:text-rose-600 disabled:hover:border-rose-200"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">-</span>
+            <span className="text-sm">Falta</span>
+          </button>
+          <button
+            onClick={() => onResolve(result.id, 'SKIPPED')}
+            disabled={result.status !== 'PENDING'}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-50 hover:bg-slate-200 text-slate-600 border border-slate-200 font-semibold py-2.5 px-3 rounded-xl transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-50 disabled:hover:text-slate-600 disabled:hover:border-slate-200"
+            title="Omitir sin penalizar"
+          >
+            <span className="text-sm group-hover:scale-110 transition-transform">~</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

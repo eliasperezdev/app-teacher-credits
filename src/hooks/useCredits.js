@@ -17,6 +17,8 @@ export function useCreditSummary(commissionId) {
     queryKey: creditKeys.summaries(commissionId),
     queryFn: () => creditService.getSummary(commissionId),
     enabled: !!commissionId,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -25,6 +27,19 @@ export function useCreateCredit() {
 
   return useMutation({
     mutationFn: creditService.create,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: creditKeys.lists(variables.groupId) });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: creditKeys.all });
+    },
+  });
+}
+
+export function useQuickCredit() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: creditService.quickCredit,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: creditKeys.lists(variables.groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });

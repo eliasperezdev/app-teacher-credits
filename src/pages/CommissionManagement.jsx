@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
-import { useStudents, useImportStudents } from '../hooks/useStudents';
+import { useStudents, useImportStudents, useUpdateStudent } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
-import { useCreditSummary, useCreateCredit } from '../hooks/useCredits';
+import { useCreditSummary, useCreateCredit, useQuickCredit } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
+import { useGeneratePublicLink, useRevokePublicLink } from '../hooks/usePublic';
 import Header from '../components/Header';
+import EditStudentModal from '../components/EditStudentModal';
 
 const TABS = [
   { id: 'config', label: 'Configuracion' },
@@ -117,7 +119,7 @@ const CommissionManagement = () => {
 
         {activeTab === 'config' && <ConfigTab commission={commission} />}
         {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} sessions={sessionsData?.data ?? []} />}
-        {activeTab === 'groups' && <GroupsTab commission={commission} students={students} groups={groups} />}
+        {activeTab === 'groups' && <GroupsTab commission={commission} students={students} groups={groups} sessions={sessionsData?.data ?? []} />}
       </main>
     </div>
   );
@@ -134,9 +136,13 @@ const ConfigTab = ({ commission }) => {
   const [autoCompleteGroups, setAutoCompleteGroups] = useState(commission.autoCompleteGroups);
   const [error, setError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [publicLink, setPublicLink] = useState(commission.publicUrl || null);
+  const [copied, setCopied] = useState(false);
 
   const updateCommission = useUpdateCommission();
   const deleteCommission = useDeleteCommission();
+  const generateLink = useGeneratePublicLink();
+  const revokeLink = useRevokePublicLink();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -269,6 +275,75 @@ const ConfigTab = ({ commission }) => {
         </form>
       </section>
 
+      <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-indigo-100">
+        <h2 className="text-xl font-black text-indigo-600 mb-2">Link Público de Ranking</h2>
+        <p className="text-sm text-slate-500 mb-4">Comparte este enlace para que cualquiera pueda ver el ranking de grupos. Solo quien tenga el link podrá acceder.</p>
+
+        {!publicLink ? (
+          <button
+            onClick={async () => {
+              try {
+                const res = await generateLink.mutateAsync(commission.id);
+                setPublicLink(res.publicUrl || res.data?.publicUrl);
+              } catch (err) {
+                setError(err.response?.data?.message || 'Error al generar el link');
+              }
+            }}
+            disabled={generateLink.isPending}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-2.5 px-5 rounded-xl transition-colors cursor-pointer"
+          >
+            {generateLink.isPending ? 'Generando...' : 'Generar Link Público'}
+          </button>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              <svg className="w-5 h-5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span className="text-sm font-mono text-slate-700 truncate">{publicLink}</span>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(publicLink);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold py-2.5 px-4 rounded-xl transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+            >
+              {copied ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copiado
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copiar
+                </>
+              )}
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  await revokeLink.mutateAsync(commission.id);
+                  setPublicLink(null);
+                } catch (err) {
+                  setError(err.response?.data?.message || 'Error al revocar el link');
+                }
+              }}
+              disabled={revokeLink.isPending}
+              className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold py-2.5 px-4 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {revokeLink.isPending ? 'Revocando...' : 'Revocar'}
+            </button>
+          </div>
+        )}
+      </section>
+
       <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-rose-100">
         <h2 className="text-xl font-black text-rose-600 mb-2">Zona de Peligro</h2>
         <p className="text-sm text-slate-500 mb-4">Esta acción no se puede deshacer. Se eliminarán todos los alumnos, grupos y sesiones asociadas.</p>
@@ -308,6 +383,7 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
   const [canjearModal, setCanjearModal] = useState(null);
   const [canjearError, setCanjearError] = useState('');
   const [canjearSuccess, setCanjearSuccess] = useState('');
+  const [editModal, setEditModal] = useState(null);
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
@@ -485,6 +561,15 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                   </div>
                   <div className="col-span-1 md:col-span-3 flex justify-end md:justify-center gap-2">
                     <button
+                      onClick={() => setEditModal(s)}
+                      className="bg-indigo-100 hover:bg-indigo-400 text-indigo-700 hover:text-indigo-900 font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Modificar datos"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg> Editar
+                    </button>
+                    <button
                       onClick={() => canCanjear && setCanjearModal({ student: s, credits: totalCredits, points: pointsValue })}
                       disabled={!canCanjear}
                       className={`font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
@@ -550,11 +635,15 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
           </div>
         </div>
       )}
+
+      {editModal && (
+        <EditStudentModal student={editModal} onClose={() => setEditModal(null)} />
+      )}
     </div>
   );
 };
 
-const GroupsTab = ({ commission, students, groups }) => {
+const GroupsTab = ({ commission, students, groups, sessions }) => {
   const [selectedGroupId, setSelectedGroupId] = useState(groups.length > 0 ? groups[0].id : null);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
 
@@ -596,7 +685,7 @@ const GroupsTab = ({ commission, students, groups }) => {
       {/* Right Column: Group Editor */}
       <section className="flex-1 bg-white rounded-[2rem] shadow-sm border border-slate-100 flex flex-col overflow-hidden relative min-h-0">
         {selectedGroup ? (
-          <GroupEditor group={selectedGroup} students={students} maxSize={commission.maxGroupSize} />
+          <GroupEditor group={selectedGroup} students={students} maxSize={commission.maxGroupSize} sessions={sessions} />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 z-10">
             <svg className="w-10 h-10 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -680,15 +769,22 @@ const GroupDirectoryItem = ({ group, minSize, isSelected, onSelect }) => {
   );
 };
 
-const GroupEditor = ({ group, students, maxSize }) => {
+const GroupEditor = ({ group, students, maxSize, sessions }) => {
   const [name, setName] = useState(group.name);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditAmount, setCreditAmount] = useState(1);
+  const [creditReason, setCreditReason] = useState('');
+  const [creditError, setCreditError] = useState('');
 
   const updateGroup = useUpdateGroup();
   const addMember = useAddGroupMember();
   const removeMember = useRemoveGroupMember();
+  const quickCredit = useQuickCredit();
+
+  const activeSession = sessions.find((s) => !s.isClosed);
 
   const isComplete = group.members.length >= maxSize;
 
@@ -739,11 +835,38 @@ const GroupEditor = ({ group, students, maxSize }) => {
     }
   };
 
+  const handleQuickCredit = async () => {
+    if (!activeSession) {
+      setCreditError('No hay una sesión activa');
+      return;
+    }
+    if (!creditReason.trim()) {
+      setCreditError('El motivo es obligatorio');
+      return;
+    }
+    setCreditError('');
+    try {
+      await quickCredit.mutateAsync({
+        groupId: group.id,
+        amount: creditAmount,
+        sessionId: activeSession.id,
+        reason: creditReason.trim(),
+      });
+      setSuccess(`+${creditAmount} crédito${creditAmount > 1 ? 's' : ''} agregado${creditAmount > 1 ? 's' : ''}`);
+      setTimeout(() => setSuccess(''), 3000);
+      setShowCreditModal(false);
+      setCreditReason('');
+      setCreditAmount(1);
+    } catch (err) {
+      setCreditError(err.response?.data?.message || 'Error al agregar crédito');
+    }
+  };
+
   return (
     <>
       {/* Header */}
       <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50">
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
           <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-100 px-2.5 py-1 rounded-md border border-indigo-200">
             Grupo
           </span>
@@ -758,6 +881,17 @@ const GroupEditor = ({ group, students, maxSize }) => {
               Incompleto
             </span>
           )}
+          <button
+            onClick={() => setShowCreditModal(true)}
+            disabled={!activeSession}
+            className="ml-auto bg-emerald-100 hover:bg-emerald-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-emerald-700 font-bold py-1.5 px-3 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            title={!activeSession ? 'No hay sesión activa' : 'Agregar créditos manualmente'}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Créditos
+          </button>
         </div>
 
         <input
@@ -895,6 +1029,71 @@ const GroupEditor = ({ group, students, maxSize }) => {
           </ul>
         </div>
       </div>
+
+      {showCreditModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-2xl font-black text-slate-800 mb-2">Agregar Créditos</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Grupo: <span className="font-bold">{group.name}</span>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Cantidad</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3].map((amount) => (
+                    <button
+                      key={amount}
+                      onClick={() => setCreditAmount(amount)}
+                      className={`flex-1 py-3 rounded-xl font-bold text-lg transition-all cursor-pointer ${
+                        creditAmount === amount
+                          ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      +{amount}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">Motivo</label>
+                <input
+                  type="text"
+                  value={creditReason}
+                  onChange={(e) => setCreditReason(e.target.value)}
+                  placeholder="Ej: Participación especial, Trabajo extra..."
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 focus:outline-none transition-colors"
+                  autoFocus
+                />
+              </div>
+
+              {creditError && (
+                <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3">{creditError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => { setShowCreditModal(false); setCreditError(''); setCreditReason(''); setCreditAmount(1); }}
+                className="flex-1 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleQuickCredit}
+                disabled={quickCredit.isPending || !creditReason.trim()}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                {quickCredit.isPending ? 'Agregando...' : 'Agregar Crédito'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
