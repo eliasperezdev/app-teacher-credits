@@ -528,6 +528,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                   result={result}
                   onResolve={handleResolve}
                   onRerun={absentOrSkippedResults.length > 0 ? handleRerunAbsentOrSkipped : undefined}
+                  noGroupsAvailable={noGroupsAvailable}
                 />
               ))}
             </div>
@@ -727,9 +728,10 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                   setPendingRaffleAction(null);
                   handleRerunAbsentOrSkipped();
                 }}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+                disabled={noGroupsAvailable}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500"
               >
-                Re-sortear estos grupos
+                {noGroupsAvailable ? 'Sin grupos disponibles' : 'Re-sortear estos grupos'}
               </button>
               <button
                 onClick={async () => {
@@ -746,9 +748,10 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                   }
                   setPendingRaffleAction(null);
                 }}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+                disabled={noGroupsAvailable}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
               >
-                Descartar pendientes y hacer sorteo nuevo
+                {noGroupsAvailable ? 'Sin grupos disponibles' : 'Descartar pendientes y hacer sorteo nuevo'}
               </button>
               <button
                 onClick={() => {
@@ -835,7 +838,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   );
 };
 
-const RaffleResultRow = ({ result, onResolve, onRerun }) => {
+const RaffleResultRow = ({ result, onResolve, onRerun, noGroupsAvailable }) => {
   const group = result.group;
   const isAbsent = result.status === 'ABSENT';
   const isSkipped = result.status === 'SKIPPED';
@@ -877,12 +880,13 @@ const RaffleResultRow = ({ result, onResolve, onRerun }) => {
           {onRerun && (
             <button
               onClick={onRerun}
-              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+              disabled={noGroupsAvailable}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-50 disabled:hover:text-amber-600 disabled:hover:border-amber-200"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              <span className="text-sm">Re-sortear</span>
+              <span className="text-sm">{noGroupsAvailable ? 'Sin grupos' : 'Re-sortear'}</span>
             </button>
           )}
         </div>

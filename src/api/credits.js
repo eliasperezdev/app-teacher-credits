@@ -11,6 +11,11 @@ export const creditService = {
     return response.data;
   },
 
+  quickCredit: async ({ groupId, ...payload }) => {
+    const response = await axiosInstance.post(`/groups/${groupId}/credits/quick`, payload);
+    return response.data;
+  },
+
   reverse: async (id) => {
     const response = await axiosInstance.post(`/credits/${id}/reverse`, {});
     return response.data;

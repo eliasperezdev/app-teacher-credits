@@ -7,6 +7,8 @@ export function useStudents(commissionId) {
     queryKey: studentKeys.lists(commissionId),
     queryFn: () => studentService.getAll(commissionId),
     enabled: !!commissionId,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
