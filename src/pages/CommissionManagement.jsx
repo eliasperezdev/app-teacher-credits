@@ -5,7 +5,7 @@ import { useStudents, useImportStudents, useUpdateStudent } from '../hooks/useSt
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
 import { useCreditSummary, useCreateCredit, useQuickCredit } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
-import { useGeneratePublicLink, useRevokePublicLink } from '../hooks/usePublic';
+import { useGeneratePublicLink, useRevokePublicLink, usePublicLink } from '../hooks/usePublic';
 import Header from '../components/Header';
 import EditStudentModal from '../components/EditStudentModal';
 
@@ -136,13 +136,14 @@ const ConfigTab = ({ commission }) => {
   const [autoCompleteGroups, setAutoCompleteGroups] = useState(commission.autoCompleteGroups);
   const [error, setError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [publicLink, setPublicLink] = useState(commission.publicUrl || null);
   const [copied, setCopied] = useState(false);
 
   const updateCommission = useUpdateCommission();
   const deleteCommission = useDeleteCommission();
   const generateLink = useGeneratePublicLink();
   const revokeLink = useRevokePublicLink();
+  const { data: publicLinkData } = usePublicLink(commission.id);
+  const publicLink = publicLinkData?.data?.publicUrl || null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -283,8 +284,7 @@ const ConfigTab = ({ commission }) => {
           <button
             onClick={async () => {
               try {
-                const res = await generateLink.mutateAsync(commission.id);
-                setPublicLink(res.publicUrl || res.data?.publicUrl);
+                await generateLink.mutateAsync(commission.id);
               } catch (err) {
                 setError(err.response?.data?.message || 'Error al generar el link');
               }
@@ -330,7 +330,6 @@ const ConfigTab = ({ commission }) => {
               onClick={async () => {
                 try {
                   await revokeLink.mutateAsync(commission.id);
-                  setPublicLink(null);
                 } catch (err) {
                   setError(err.response?.data?.message || 'Error al revocar el link');
                 }

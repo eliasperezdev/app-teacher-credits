@@ -9,13 +9,21 @@ export function usePublicGroups(slug) {
   });
 }
 
+export function usePublicLink(commissionId) {
+  return useQuery({
+    queryKey: ['publicLink', commissionId],
+    queryFn: () => publicService.getPublicLink(commissionId),
+    enabled: !!commissionId,
+  });
+}
+
 export function useGeneratePublicLink() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: publicService.generatePublicLink,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['publicLink'] });
+    onSuccess: (_data, commissionId) => {
+      queryClient.invalidateQueries({ queryKey: ['publicLink', commissionId] });
     },
   });
 }
@@ -25,8 +33,8 @@ export function useRevokePublicLink() {
 
   return useMutation({
     mutationFn: publicService.revokePublicLink,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['publicLink'] });
+    onSuccess: (_data, commissionId) => {
+      queryClient.invalidateQueries({ queryKey: ['publicLink', commissionId] });
     },
   });
 }

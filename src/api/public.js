@@ -9,6 +9,11 @@ export const publicService = {
     return response.data;
   },
 
+  getPublicLink: async (commissionId) => {
+    const response = await axiosInstance.get(`/commissions/${commissionId}/public-link`);
+    return response.data;
+  },
+
   generatePublicLink: async (commissionId) => {
     const response = await axiosInstance.post(`/commissions/${commissionId}/public-link`);
     return response.data;
