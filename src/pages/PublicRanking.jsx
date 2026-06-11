@@ -41,10 +41,9 @@ const GroupItem = ({ group }) => {
       {expanded && (
         <div className="border-t border-slate-100 px-5 py-4 bg-slate-50/50">
           <div className="hidden sm:grid grid-cols-12 gap-4 pb-2 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            <div className="col-span-5">Alumno</div>
-            <div className="col-span-3">Legajo</div>
-            <div className="col-span-2 text-right">Créditos</div>
-            <div className="col-span-2 text-right">Puntos</div>
+            <div className="col-span-6">Alumno</div>
+            <div className="col-span-3 text-right">Créditos</div>
+            <div className="col-span-3 text-right">Puntos</div>
           </div>
           <div className="space-y-1">
             {group.members.map((member) => (
@@ -52,17 +51,16 @@ const GroupItem = ({ group }) => {
                 key={member.id}
                 className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-center py-2 px-3 rounded-xl"
               >
-                <div className="sm:col-span-5 flex items-center gap-3">
+                <div className="sm:col-span-6 flex items-center gap-3">
                   <div className="w-7 h-7 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0">
                     {member.firstName[0]}{member.lastName[0]}
                   </div>
                   <span className="text-sm font-medium text-slate-700">{member.lastName}, {member.firstName}</span>
                 </div>
-                <div className="sm:col-span-3 text-sm text-slate-500 pl-10 sm:pl-0">{member.fileNumber}</div>
-                <div className="sm:col-span-2 text-right">
+                <div className="sm:col-span-3 text-right">
                   <span className="text-sm font-bold text-emerald-600">{member.totalCredits}</span>
                 </div>
-                <div className="sm:col-span-2 text-right">
+                <div className="sm:col-span-3 text-right">
                   <span className="text-sm text-slate-500">
                     {member.pointsValue > 0 ? member.pointsValue.toFixed(2) : '0.00'}
                   </span>
