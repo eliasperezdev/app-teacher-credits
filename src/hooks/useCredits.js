@@ -31,6 +31,7 @@ export function useCreateCredit() {
       queryClient.invalidateQueries({ queryKey: creditKeys.lists(variables.groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: creditKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -44,6 +45,7 @@ export function useQuickCredit() {
       queryClient.invalidateQueries({ queryKey: creditKeys.lists(variables.groupId) });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: creditKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -57,6 +59,7 @@ export function useReverseCredit() {
       queryClient.invalidateQueries({ queryKey: creditKeys.all });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
