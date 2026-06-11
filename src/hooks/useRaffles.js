@@ -33,6 +33,7 @@ export function useResolveRaffleResult() {
       queryClient.invalidateQueries({ queryKey: raffleKeys.all });
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -58,6 +59,7 @@ export function useCorrectRaffleResult() {
       queryClient.invalidateQueries({ queryKey: raffleKeys.all });
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }

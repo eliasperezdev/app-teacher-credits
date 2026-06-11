@@ -26,6 +26,7 @@ export function useCreateGroup() {
     mutationFn: groupService.create,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.lists(variables.commissionId) });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -38,6 +39,7 @@ export function useUpdateGroup() {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: groupKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -49,6 +51,7 @@ export function useDeleteGroup() {
     mutationFn: groupService.remove,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -61,6 +64,7 @@ export function useAddGroupMember() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: studentKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
@@ -73,6 +77,7 @@ export function useRemoveGroupMember() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.all });
       queryClient.invalidateQueries({ queryKey: studentKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['publicGroups'] });
     },
   });
 }
