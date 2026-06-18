@@ -25,4 +25,9 @@ export const raffleService = {
     const response = await axiosInstance.patch(`/raffle-results/${resultId}/correct`, { newStatus });
     return response.data;
   },
+
+  getPool: async (sessionId) => {
+    const response = await axiosInstance.get(`/sessions/${sessionId}/raffles/pool`);
+    return response.data;
+  },
 };

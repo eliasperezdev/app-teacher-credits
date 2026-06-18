@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useCommission } from '../hooks/useCommissions';
 import { useSessions, useCreateSession, useCloseSession } from '../hooks/useSessions';
 import { useSession } from '../hooks/useSessions';
-import { useRaffles, useCreateRaffle, useResolveRaffleResult, useRerunRaffle, useCorrectRaffleResult } from '../hooks/useRaffles';
+import { useRaffles, useRafflePool, useCreateRaffle, useResolveRaffleResult, useRerunRaffle, useCorrectRaffleResult } from '../hooks/useRaffles';
 import { useGroups } from '../hooks/useGroups';
 import { useReverseCredit } from '../hooks/useCredits';
 import Header from '../components/Header';
@@ -171,6 +171,7 @@ const CommissionDetail = () => {
 
 const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => {
   const { data: rafflesData } = useRaffles(session.id);
+  const { data: poolData } = useRafflePool(session.id);
   const { data: sessionDetailData } = useSession(session.id);
   const { data: groupsData } = useGroups(commission.id);
   const createRaffle = useCreateRaffle();
@@ -187,6 +188,7 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
   const [correctModal, setCorrectModal] = useState(null);
 
   const raffles = rafflesData?.data ?? [];
+  const pool = poolData?.data ?? [];
   const sessionDetail = sessionDetailData?.data;
   const creditEvents = sessionDetail?.creditEvents ?? [];
   const groups = groupsData?.data ?? [];
@@ -219,7 +221,8 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
 
   const hasAbsentOrSkipped = absentOrSkippedResults.length > 0;
 
-  const availableCount = availableGroups.length;
+  const poolAvailableCount = pool.length > 0 ? pool.filter(p => !p.status).length : availableGroups.length;
+  const availableCount = poolAvailableCount;
   const noGroupsAvailable = availableCount === 0;
 
   const cappedQuantity = Math.min(quantity, Math.max(1, availableCount));
@@ -466,14 +469,14 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
               <div className="flex flex-col gap-2">
                 <div className="bg-rose-50 border border-rose-200 rounded-2xl py-3 px-4 text-center">
                   <p className="text-sm font-bold text-rose-700">No hay grupos disponibles para reemplazar</p>
-                  <p className="text-xs text-rose-500 mt-1">Los grupos ausentes/omitidos no pueden ser re-sorteados</p>
+                  <p className="text-xs text-rose-500 mt-1">Descartá los ausentes/omitidos para continuar</p>
                 </div>
                 <button
                   onClick={handleDismissAbsentOrSkipped}
                   disabled={resolveResult.isPending}
-                  className="bg-slate-50 hover:bg-slate-100 disabled:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl py-3 text-sm font-bold w-full transition-colors cursor-pointer disabled:opacity-50"
+                  className="bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-bold py-3 text-sm w-full transition-colors cursor-pointer disabled:opacity-50 rounded-2xl"
                 >
-                  Descartar grupos pendientes
+                  {resolveResult.isPending ? 'Descartando...' : 'Descartar y finalizar'}
                 </button>
               </div>
             ) : (
@@ -488,6 +491,72 @@ const ClassConsole = ({ commission, session, onCloseClass, closingSession }) => 
                 Re-sortear ausentes/omitidos ({absentOrSkippedResults.length})
               </button>
             )
+          )}
+
+          {pool.length > 0 && (
+            <div className="mt-6 border-t border-slate-100 pt-4">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Pool
+                <span className="text-xs font-medium text-slate-400 normal-case">({pool.filter(p => !p.status).length})</span>
+              </h3>
+              <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
+                {pool.map((item) => {
+                  const isDisabled = item.status !== null && item.status !== undefined;
+                  const probability = item.probability ?? 0;
+                  const probPercent = (probability * 100).toFixed(0);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors ${
+                        isDisabled ? 'opacity-40 bg-slate-50' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-semibold truncate ${isDisabled ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                          {item.name}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-8 h-1 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              probability > 0.2 ? 'bg-emerald-500' :
+                              probability > 0 ? 'bg-indigo-400' : 'bg-transparent'
+                            }`}
+                            style={{ width: `${Math.max(probability * 100, probability > 0 ? 15 : 0)}%` }}
+                          />
+                        </div>
+                        <span className={`font-bold tabular-nums w-8 text-right ${
+                          probability > 0.2 ? 'text-emerald-600' :
+                          probability > 0 ? 'text-indigo-500' : 'text-slate-300'
+                        }`}>
+                          {probPercent}%
+                        </span>
+                      </div>
+                      {item.status && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                          item.status === 'PENDING' ? 'bg-indigo-100 text-indigo-700' :
+                          item.status === 'PARTICIPATED' ? 'bg-emerald-100 text-emerald-700' :
+                          item.status === 'ABSENT' ? 'bg-rose-100 text-rose-700' :
+                          item.status === 'SKIPPED' ? 'bg-slate-100 text-slate-500' :
+                          'bg-slate-100 text-slate-400'
+                        }`}>
+                          {item.status === 'PENDING' ? 'PEND' :
+                           item.status === 'PARTICIPATED' ? 'OK' :
+                           item.status === 'ABSENT' ? 'AUS' :
+                           item.status === 'SKIPPED' ? 'SKIP' :
+                           item.status === 'REPLACED' ? 'RE-S' : item.status}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </aside>
 
@@ -876,18 +945,23 @@ const RaffleResultRow = ({ result, onResolve, onRerun, noGroupsAvailable }) => {
 
       {isResolved ? (
         <div className="flex items-center gap-2 w-full lg:w-auto">
-          <span className="text-sm text-slate-400 italic">Esperando re-sorteo...</span>
-          {onRerun && (
-            <button
-              onClick={onRerun}
-              disabled={noGroupsAvailable}
-              className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-50 disabled:hover:text-amber-600 disabled:hover:border-amber-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span className="text-sm">{noGroupsAvailable ? 'Sin grupos' : 'Re-sortear'}</span>
-            </button>
+          {noGroupsAvailable ? (
+            <span className="text-sm text-rose-500 font-semibold italic">Sin grupos para reemplazar</span>
+          ) : (
+            <>
+              <span className="text-sm text-slate-400 italic">Esperando re-sorteo...</span>
+              {onRerun && (
+                <button
+                  onClick={onRerun}
+                  className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="text-sm">Re-sortear</span>
+                </button>
+              )}
+            </>
           )}
         </div>
       ) : (
