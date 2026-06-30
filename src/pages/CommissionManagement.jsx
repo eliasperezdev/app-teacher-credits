@@ -1,13 +1,23 @@
 import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCommission, useUpdateCommission, useDeleteCommission } from '../hooks/useCommissions';
-import { useStudents, useImportStudents, useUpdateStudent } from '../hooks/useStudents';
+import { useStudents, useImportStudents } from '../hooks/useStudents';
 import { useGroups, useCreateGroup, useAddGroupMember, useRemoveGroupMember, useDeleteGroup, useUpdateGroup } from '../hooks/useGroups';
-import { useCreditSummary, useCreateCredit, useQuickCredit } from '../hooks/useCredits';
+import { useCreditSummary, useQuickCredit, useRedeemablePoints, useRedemptions, useCreateRedemption } from '../hooks/useCredits';
 import { useSessions } from '../hooks/useSessions';
 import { useGeneratePublicLink, useRevokePublicLink, usePublicLink } from '../hooks/usePublic';
 import Header from '../components/Header';
 import EditStudentModal from '../components/EditStudentModal';
+
+const REDEMPTION_TIERS = [0.05, 0.10, 0.15, 0.20, 0.25, 0.50, 1.00];
+
+const EXAM_TYPES = [
+  '1er Parcial',
+  '2do Parcial',
+  'Recuperatorio',
+  'Final',
+  'Trabajo Práctico',
+];
 
 const TABS = [
   { id: 'config', label: 'Configuracion' },
@@ -38,6 +48,8 @@ const CommissionManagement = () => {
         studentCreditMap[member.id] = {
           totalCredits: member.totalCredits,
           pointsValue: member.pointsValue,
+          totalRedeemed: member.totalRedeemed ?? 0,
+          availablePoints: member.availablePoints ?? 0,
           creditValue: creditSummary.creditValue,
         };
       }
@@ -118,7 +130,7 @@ const CommissionManagement = () => {
         </div>
 
         {activeTab === 'config' && <ConfigTab commission={commission} />}
-        {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} sessions={sessionsData?.data ?? []} />}
+        {activeTab === 'students' && <StudentsTab commission={commission} students={students} studentCreditMap={studentCreditMap} />}
         {activeTab === 'groups' && <GroupsTab commission={commission} students={students} groups={groups} sessions={sessionsData?.data ?? []} />}
       </main>
     </div>
@@ -375,18 +387,259 @@ const ConfigTab = ({ commission }) => {
   );
 };
 
-const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
+const RedeemPointsModal = ({ student, onClose, createRedemption }) => {
+  const [examType, setExamType] = useState('');
+  const [customExamType, setCustomExamType] = useState('');
+  const [pointsUsed, setPointsUsed] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const { data: pointsData, isLoading: loadingPoints } = useRedeemablePoints(student.id);
+  const { data: redemptionsData, isLoading: loadingRedemptions } = useRedemptions(student.id);
+
+  const availablePoints = pointsData?.data?.availablePoints ?? 0;
+  const totalCalculated = pointsData?.data?.totalCalculated ?? 0;
+  const totalRedeemed = pointsData?.data?.totalRedeemed ?? 0;
+  const redemptions = redemptionsData?.data ?? [];
+
+  const finalExamType = examType === 'Otro' ? customExamType : examType;
+
+  const handleSubmit = async () => {
+    setError('');
+    setSuccess('');
+
+    if (!finalExamType || finalExamType.trim().length === 0) {
+      setError('El tipo de examen es obligatorio');
+      return;
+    }
+    if (finalExamType.length > 100) {
+      setError('El tipo de examen no puede superar los 100 caracteres');
+      return;
+    }
+    if (pointsUsed < 0.01) {
+      setError('Los puntos a canjear deben ser al menos 0.01');
+      return;
+    }
+    if (pointsUsed > availablePoints) {
+      setError('No tienes suficientes puntos disponibles');
+      return;
+    }
+    if (notes.length > 500) {
+      setError('Las notas no pueden superar los 500 caracteres');
+      return;
+    }
+
+    try {
+      await createRedemption.mutateAsync({
+        memberId: student.id,
+        examType: finalExamType.trim(),
+        pointsUsed,
+        notes: notes.trim() || null,
+      });
+      setSuccess('Puntos canjeados correctamente');
+      setExamType('');
+      setCustomExamType('');
+      setPointsUsed(0);
+      setNotes('');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error al canjear puntos');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h3 className="text-2xl font-black text-slate-800 mb-1">Canjear Puntos</h3>
+            <p className="text-sm text-slate-500">
+              {student.lastName}, {student.firstName}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {loadingPoints ? (
+          <div className="text-center py-8">
+            <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+            <p className="text-sm text-slate-500">Cargando puntos...</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-indigo-600 uppercase mb-1">Calculados</p>
+                <p className="text-2xl font-black text-indigo-700">{totalCalculated.toFixed(2)}</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-600 uppercase mb-1">Canjeados</p>
+                <p className="text-2xl font-black text-amber-700">{totalRedeemed.toFixed(2)}</p>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Disponibles</p>
+                <p className="text-2xl font-black text-emerald-700">{availablePoints.toFixed(2)}</p>
+              </div>
+            </div>
+
+            {availablePoints <= 0 ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center mb-6">
+                <p className="text-sm font-bold text-slate-500">No tienes puntos disponibles para canjear</p>
+              </div>
+            ) : (
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipo de Examen</label>
+                  <select
+                    value={examType}
+                    onChange={(e) => setExamType(e.target.value)}
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors bg-white"
+                  >
+                    <option value="">Seleccionar tipo...</option>
+                    {EXAM_TYPES.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                    <option value="Otro">Otro (especificar)</option>
+                  </select>
+                </div>
+
+                {examType === 'Otro' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Especificar tipo</label>
+                    <input
+                      type="text"
+                      value={customExamType}
+                      onChange={(e) => setCustomExamType(e.target.value)}
+                      placeholder="Ej: Trabajo Final, Examen Oral..."
+                      maxLength={100}
+                      className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Puntos a Canjear</label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {REDEMPTION_TIERS.filter(tier => tier <= availablePoints).map((tier) => (
+                      <button
+                        key={tier}
+                        onClick={() => setPointsUsed(tier)}
+                        className={`px-4 py-2 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                          pointsUsed === tier
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {tier.toFixed(2)}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    value={pointsUsed || ''}
+                    onChange={(e) => setPointsUsed(parseFloat(e.target.value) || 0)}
+                    placeholder="O ingresa un monto personalizado"
+                    min="0.01"
+                    max={availablePoints}
+                    step="0.01"
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Notas <span className="text-slate-400 font-normal">(opcional)</span>
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Agregar notas adicionales..."
+                    maxLength={500}
+                    rows={3}
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none transition-colors resize-none"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">{notes.length}/500</p>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4">{error}</p>
+            )}
+            {success && (
+              <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 mb-4">{success}</p>
+            )}
+
+            <div className="flex gap-3 mb-6">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={createRedemption.isPending || availablePoints <= 0 || !finalExamType || pointsUsed <= 0}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                {createRedemption.isPending ? 'Canjeando...' : 'Confirmar Canje'}
+              </button>
+            </div>
+
+            <div className="border-t border-slate-200 pt-6">
+              <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Historial de Canjes
+              </h4>
+              {loadingRedemptions ? (
+                <p className="text-sm text-slate-400 text-center py-4">Cargando historial...</p>
+              ) : redemptions.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">No hay canjes registrados</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {redemptions.map((redemption) => (
+                    <div key={redemption.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="text-sm font-bold text-slate-700">{redemption.examType}</p>
+                        <span className="text-sm font-black text-indigo-600">-{redemption.pointsUsed.toFixed(2)}</span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {new Date(redemption.createdAt).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {redemption.notes && ` • ${redemption.notes}`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StudentsTab = ({ commission, students, studentCreditMap }) => {
   const [search, setSearch] = useState('');
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
   const [canjearModal, setCanjearModal] = useState(null);
-  const [canjearError, setCanjearError] = useState('');
-  const [canjearSuccess, setCanjearSuccess] = useState('');
   const [editModal, setEditModal] = useState(null);
   const fileInputRef = useRef(null);
 
   const importStudents = useImportStudents();
-  const createCredit = useCreateCredit();
+  const createRedemption = useCreateRedemption();
 
   const filtered = students.filter((s) => {
     const q = search.toLowerCase();
@@ -409,28 +662,6 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
       e.target.value = '';
     } catch (err) {
       setImportError(err.response?.data?.message || 'Error al importar alumnos');
-    }
-  };
-
-  const handleCanjear = async () => {
-    if (!canjearModal) return;
-    setCanjearError('');
-    setCanjearSuccess('');
-
-    const latestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
-
-    try {
-      await createCredit.mutateAsync({
-        groupId: canjearModal.student.group.id,
-        sessionId: latestSession?.id,
-        amount: -canjearModal.credits,
-        reason: 'Canje de créditos',
-      });
-      setCanjearSuccess('Créditos canjeados correctamente');
-      setCanjearModal(null);
-      setTimeout(() => setCanjearSuccess(''), 3000);
-    } catch (err) {
-      setCanjearError(err.response?.data?.message || 'Error al canjear créditos');
     }
   };
 
@@ -508,10 +739,11 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
         {/* Table Headers */}
         <div className="hidden md:grid grid-cols-12 gap-4 px-4 pb-3 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
           <div className="col-span-3">Alumno</div>
-          <div className="col-span-2">Legajo</div>
-          <div className="col-span-2">Grupo</div>
-          <div className="col-span-2 text-right">Créditos</div>
-          <div className="col-span-3 text-center">Acciones</div>
+          <div className="col-span-1">Legajo</div>
+          <div className="col-span-1">Grupo</div>
+          <div className="col-span-1 text-right">Créditos</div>
+          <div className="col-span-2 text-right">Puntos</div>
+          <div className="col-span-2 text-center">Acciones</div>
         </div>
 
         {filtered.length === 0 ? (
@@ -524,7 +756,8 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
               const creditInfo = studentCreditMap[s.id];
               const totalCredits = creditInfo?.totalCredits ?? 0;
               const pointsValue = creditInfo?.pointsValue ?? 0;
-              const canCanjear = totalCredits > 0;
+              const totalRedeemed = creditInfo?.totalRedeemed ?? 0;
+              const availablePoints = creditInfo?.availablePoints ?? 0;
 
               return (
                 <div key={s.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white hover:bg-slate-50 border border-transparent hover:border-slate-100 p-4 rounded-2xl transition-colors group">
@@ -537,15 +770,15 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                       <p className="text-xs text-slate-500 md:hidden mt-0.5">Leg: {s.fileNumber}{s.group ? ` • G: ${s.group.name}` : ''}</p>
                     </div>
                   </div>
-                  <div className="hidden md:block col-span-2 text-sm text-slate-600 font-medium">{s.fileNumber}</div>
-                  <div className="hidden md:block col-span-2">
+                  <div className="hidden md:block col-span-1 text-sm text-slate-600 font-medium">{s.fileNumber}</div>
+                  <div className="hidden md:block col-span-1">
                     {s.group ? (
                       <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-md">{s.group.name}</span>
                     ) : (
                       <span className="bg-rose-50 text-rose-600 text-xs font-bold px-2 py-1 rounded-md border border-rose-100">Sin grupo</span>
                     )}
                   </div>
-                  <div className="col-span-1 md:col-span-2 flex items-center md:justify-end gap-2">
+                  <div className="col-span-1 md:col-span-1 flex items-center md:justify-end">
                     <div className={`px-3 py-1.5 rounded-lg text-right w-fit md:w-full ${
                       totalCredits > 0
                         ? 'bg-emerald-50 border border-emerald-100'
@@ -554,11 +787,27 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                       <span className={`text-sm font-bold ${
                         totalCredits > 0 ? 'text-emerald-700' : 'text-slate-600'
                       }`}>
-                        {totalCredits} <span className="text-[10px] uppercase font-bold text-slate-400">Cred</span>
+                        {totalCredits}
                       </span>
                     </div>
                   </div>
-                  <div className="col-span-1 md:col-span-3 flex justify-end md:justify-center gap-2">
+                  <div className="col-span-1 md:col-span-2 flex items-center md:justify-end">
+                    <div className="flex gap-1 w-full">
+                      <div className="flex-1 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 text-center">
+                        <span className="text-xs font-bold text-indigo-700">{pointsValue.toFixed(2)}</span>
+                        <span className="text-[9px] text-indigo-400 block leading-none">calc</span>
+                      </div>
+                      <div className="flex-1 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 text-center">
+                        <span className="text-xs font-bold text-amber-700">{totalRedeemed.toFixed(2)}</span>
+                        <span className="text-[9px] text-amber-400 block leading-none">canj</span>
+                      </div>
+                      <div className="flex-1 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 text-center">
+                        <span className="text-xs font-bold text-emerald-700">{availablePoints.toFixed(2)}</span>
+                        <span className="text-[9px] text-emerald-400 block leading-none">disp</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-span-1 md:col-span-2 flex justify-end md:justify-center gap-2">
                     <button
                       onClick={() => setEditModal(s)}
                       className="bg-indigo-100 hover:bg-indigo-400 text-indigo-700 hover:text-indigo-900 font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -569,14 +818,9 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
                       </svg> Editar
                     </button>
                     <button
-                      onClick={() => canCanjear && setCanjearModal({ student: s, credits: totalCredits, points: pointsValue })}
-                      disabled={!canCanjear}
-                      className={`font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
-                        canCanjear
-                          ? 'bg-amber-100 hover:bg-amber-400 text-amber-700 hover:text-amber-900'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70'
-                      }`}
-                      title={!canCanjear ? 'Sin créditos para canjear' : 'Canjear créditos'}
+                      onClick={() => setCanjearModal({ student: s })}
+                      className="bg-amber-100 hover:bg-amber-400 text-amber-700 hover:text-amber-900 font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Canjear puntos"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
@@ -591,48 +835,11 @@ const StudentsTab = ({ commission, students, studentCreditMap, sessions }) => {
       </section>
 
       {canjearModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h3 className="text-2xl font-black text-slate-800 mb-2">Canjear Créditos</h3>
-            <p className="text-sm text-slate-500 mb-6">
-              <span className="font-bold">{canjearModal.student.lastName}, {canjearModal.student.firstName}</span> tiene{' '}
-              <span className="font-bold text-emerald-600">{canjearModal.credits} créditos</span>
-              {canjearModal.points > 0 && (
-                <span> ({canjearModal.points.toFixed(2)} pts)</span>
-              )}
-            </p>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-              <p className="text-sm font-bold text-amber-700">
-                Esta acción restará todos los créditos del alumno. ¿Confirmar canje?
-              </p>
-            </div>
-
-            {canjearError && (
-              <p className="text-sm font-bold text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4">{canjearError}</p>
-            )}
-            {canjearSuccess && (
-              <p className="text-sm font-bold text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3 mb-4">{canjearSuccess}</p>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => { setCanjearModal(null); setCanjearError(''); }}
-                className="flex-1 bg-white border-2 border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleCanjear}
-                disabled={createCredit.isPending}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer"
-              >
-                {createCredit.isPending ? 'Canjeando...' : 'Confirmar Canje'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RedeemPointsModal
+          student={canjearModal.student}
+          onClose={() => setCanjearModal(null)}
+          createRedemption={createRedemption}
+        />
       )}
 
       {editModal && (

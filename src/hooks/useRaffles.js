@@ -12,6 +12,14 @@ export function useRaffles(sessionId) {
   });
 }
 
+export function useRafflePool(sessionId) {
+  return useQuery({
+    queryKey: raffleKeys.pool(sessionId),
+    queryFn: () => raffleService.getPool(sessionId),
+    enabled: !!sessionId,
+  });
+}
+
 export function useCreateRaffle() {
   const queryClient = useQueryClient();
 
@@ -19,6 +27,7 @@ export function useCreateRaffle() {
     mutationFn: raffleService.create,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: raffleKeys.lists(variables.sessionId) });
+      queryClient.invalidateQueries({ queryKey: raffleKeys.pool(variables.sessionId) });
       queryClient.invalidateQueries({ queryKey: sessionKeys.detail(variables.sessionId) });
     },
   });
@@ -45,6 +54,7 @@ export function useRerunRaffle() {
     mutationFn: raffleService.rerun,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: raffleKeys.lists(variables.sessionId) });
+      queryClient.invalidateQueries({ queryKey: raffleKeys.pool(variables.sessionId) });
       queryClient.invalidateQueries({ queryKey: sessionKeys.detail(variables.sessionId) });
     },
   });

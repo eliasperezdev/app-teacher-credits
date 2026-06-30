@@ -4,4 +4,6 @@ export const creditKeys = {
   summaries: (commissionId) => [...creditKeys.all, 'summary', commissionId],
   details: () => [...creditKeys.all, 'detail'],
   detail: (id) => [...creditKeys.details(), id],
+  redemptions: (memberId) => [...creditKeys.all, 'redemptions', memberId],
+  redeemablePoints: (memberId) => [...creditKeys.all, 'redeemable-points', memberId],
 };
