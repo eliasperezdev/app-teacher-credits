@@ -25,4 +25,19 @@ export const creditService = {
     const response = await axiosInstance.get(`/commissions/${commissionId}/credits/summary`);
     return response.data;
   },
+
+  getRedeemablePoints: async (memberId) => {
+    const response = await axiosInstance.get(`/students/${memberId}/redeemable-points`);
+    return response.data;
+  },
+
+  createRedemption: async ({ memberId, ...payload }) => {
+    const response = await axiosInstance.post(`/students/${memberId}/redemptions`, payload);
+    return response.data;
+  },
+
+  getRedemptions: async (memberId) => {
+    const response = await axiosInstance.get(`/students/${memberId}/redemptions`);
+    return response.data;
+  },
 };

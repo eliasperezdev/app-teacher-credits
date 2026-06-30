@@ -63,3 +63,33 @@ export function useReverseCredit() {
     },
   });
 }
+
+export function useRedeemablePoints(memberId) {
+  return useQuery({
+    queryKey: creditKeys.redeemablePoints(memberId),
+    queryFn: () => creditService.getRedeemablePoints(memberId),
+    enabled: !!memberId,
+  });
+}
+
+export function useRedemptions(memberId) {
+  return useQuery({
+    queryKey: creditKeys.redemptions(memberId),
+    queryFn: () => creditService.getRedemptions(memberId),
+    enabled: !!memberId,
+  });
+}
+
+export function useCreateRedemption() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: creditService.createRedemption,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: creditKeys.redeemablePoints(variables.memberId) });
+      queryClient.invalidateQueries({ queryKey: creditKeys.redemptions(variables.memberId) });
+      queryClient.invalidateQueries({ queryKey: creditKeys.all });
+      queryClient.invalidateQueries({ queryKey: groupKeys.all });
+    },
+  });
+}
